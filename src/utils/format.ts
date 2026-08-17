@@ -36,6 +36,12 @@ const usdCompactFmt = new Intl.NumberFormat(LOCALE, {
   maximumFractionDigits: 1,
 })
 
+// Plain quantity (e.g. share counts) — not a currency, up to 2 decimals.
+const numberFmt = new Intl.NumberFormat(LOCALE, {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+})
+
 // endDate — fixed to UTC so the same instant renders identically everywhere.
 const dateFmt = new Intl.DateTimeFormat(LOCALE, {
   year: 'numeric',
@@ -60,6 +66,12 @@ export function formatUsd(value: number): string {
 export function formatUsdCompact(value: number): string {
   if (!Number.isFinite(value)) return PLACEHOLDER
   return usdCompactFmt.format(value)
+}
+
+/** Format a plain quantity (e.g. share count) with up to 2 decimals, no currency. */
+export function formatNumber(value: number): string {
+  if (!Number.isFinite(value)) return PLACEHOLDER
+  return numberFmt.format(value)
 }
 
 /** Format an ISO-8601 timestamp as a UTC calendar date, e.g. `Dec 31, 2025`. */
