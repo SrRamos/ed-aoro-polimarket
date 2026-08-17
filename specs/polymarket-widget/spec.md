@@ -1,8 +1,9 @@
 # Spec — Polymarket Widget
 
-> Status: **draft** · Feature: `polymarket-widget` · Single-page Vue 3 + TypeScript widget
-> Source of truth: [`docs/analysis-and-architecture.md`](../../docs/analysis-and-architecture.md) (decisions D1–D9)
-> Research: [Polymarket API](../../docs/research-polymarket-api.md) · [OpenRouter AI](../../docs/research-openrouter-ai.md) · [RamosLabs DS](../../docs/research-ramoslabs-ds.md)
+> Status: **ready-for-dev** (with warnings — see [`HARDEN-REPORT.md`](./HARDEN-REPORT.md) §Warnings) · Feature: `polymarket-widget` · Single-page Vue 3 + TypeScript widget
+> Hardened: 2026-08-17 (`spec-harden`) — plan in [`plan.md`](./plan.md), tasks in [`tasks.md`](./tasks.md). Open questions: 0 unresolved. Hard blockers: 0.
+> Source of truth: [`docs/analysis-and-architecture.md`](../../docs/analysis-and-architecture.md) (decisions D1–D10)
+> Research: [Polymarket API](../../docs/research-polymarket-api.md) · [OpenRouter AI](../../docs/research-openrouter-ai.md) · [RamosLabs DS](../../docs/research-ramoslabs-ds.md) · [Deployment](../../docs/deployment-cloudflare.md)
 
 ---
 
