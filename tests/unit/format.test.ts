@@ -8,6 +8,7 @@ import {
   formatPercent,
   formatUsd,
   formatUsdCompact,
+  formatNumber,
   formatEndDate,
 } from '../../src/utils/format'
 
@@ -43,6 +44,19 @@ describe('formatUsdCompact', () => {
   })
   it('guards non-finite', () => {
     expect(formatUsdCompact(NaN)).toBe(PLACEHOLDER)
+  })
+})
+
+describe('formatNumber', () => {
+  it('formats a plain quantity with up to 2 decimals, no currency', () => {
+    expect(formatNumber(20)).toBe('20')
+    expect(formatNumber(19.999)).toBe('20')
+    expect(formatNumber(12.5)).toBe('12.5')
+    expect(formatNumber(1234.5)).toBe('1,234.5')
+  })
+  it('guards non-finite', () => {
+    expect(formatNumber(NaN)).toBe(PLACEHOLDER)
+    expect(formatNumber(Infinity)).toBe(PLACEHOLDER)
   })
 })
 
