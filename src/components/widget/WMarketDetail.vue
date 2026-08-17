@@ -1,29 +1,32 @@
 <script setup lang="ts">
 /**
- * WMarketDetail (T603 · AC4.1/AC4.4/AC4.7 · NFR-MF-5) — the selected market's
- * detail, whose PRESENTATION is responsive per NFR-MF-5 while its content stays
- * identical (WMarketDetailBody):
- *   - base / md (`inline === false`): an `SJModal` — a full-screen bottom sheet on
- *     mobile, a centered `role="dialog"` at md — with `aria-labelledby` (question),
- *     `aria-describedby` (summary), focus trap, Escape, backdrop dismissal, and
- *     focus-return to the invoking card (AC4.4/AC4.7). Dialog semantics apply ONLY
- *     in this mode.
- *   - lg+ (`inline === true`): an INLINE right-hand pane in the two-pane
- *     list+detail layout — a plain labelled `region`, NOT a modal (no dialog role,
- *     no focus trap). When nothing is selected it shows a quiet placeholder so the
- *     pane is never a dead space.
+ * WMarketDetail (T603 · AC4.1/AC4.4/AC4.5/AC4.6/AC4.7 · NFR-MF-5 [D11]) — the
+ * selected market's detail, rendered as a COMPACT IN-WIDGET VIEW (D11).
  *
- * The app shell (App.vue) owns the breakpoint decision and passes `inline`, so the
- * component never guesses the viewport itself.
+ * Per Decision D11 (docs/widget-form-factor.md) the detail is NO LONGER a
+ * modal/bottom-sheet or a two-pane inline panel. The widget is a bounded card
+ * with an internal view-stack, so the detail is one step of that stack:
+ *   - A labelled `region` (NOT a dialog — dialog semantics now belong only to the
+ *     Settings modal, owned by the widget shell).
+ *   - A BACK affordance (`emit('back')`) returns to the browse view; the shell
+ *     restores scroll/focus.
+ *   - Focus moves to the detail heading on open (and whenever the selected market
+ *     changes) so keyboard users land in the new content — a handoff, not a trap.
+ *   - Composes the shared `WMarketDetailBody` (outcomes overview + WBetForm +
+ *     WAiPrediction), keeping the >2-outcome neutral chips, the closed/inactive
+ *     notice, and all formatting unchanged.
+ *
+ * The shell only ever mounts this view when a market is selected, so `market` is
+ * always present here.
  */
-import { computed, nextTick, useId, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, useId, useTemplateRef, watch } from 'vue'
 import type { Market } from '../../models/market'
 import type { BetReceipt } from '../../models/bet'
 import type { BettingService } from '../../services/betting.service'
 import type { RecordBetParams } from '../../stores/bets.store'
 import type { UseAiPrediction } from '../../composables/useAiPrediction'
 import { formatEndDate, formatUsdCompact } from '../../utils/format'
-import SJModal from '../ui/SJModal.vue'
+import SJButton from '../ui/SJButton.vue'
 import WMarketDetailBody from './WMarketDetailBody.vue'
 
 interface BetsRecorder {
@@ -31,102 +34,65 @@ interface BetsRecorder {
 }
 
 const props = defineProps<{
-  /** The selected market, or `null` when nothing is selected (inline pane). */
-  market: Market | null
-  /** `true` → inline two-pane panel; falsy → modal / bottom sheet. */
-  inline?: boolean
+  /** The selected market. The shell mounts this view only when one is selected. */
+  market: Market
   bettingService?: BettingService
   betsRecorder?: BetsRecorder
   aiController?: UseAiPrediction
 }>()
 
 const emit = defineEmits<{
-  (e: 'close'): void
+  (e: 'back'): void
   (e: 'open-settings'): void
   (e: 'filled', payload: { receipt: BetReceipt; persisted: boolean }): void
 }>()
 
-/** Modal visibility (used only when `inline === false`). */
-const open = defineModel<boolean>('open', { default: false })
 /** Selected outcome index — shared with the store, forwarded to the bet form. */
 const outcomeIndex = defineModel<number | null>('outcomeIndex', { default: null })
 
 const uid = useId()
 const titleId = `w-market-detail-${uid}-title`
 
-/** Short summary for the dialog's `aria-describedby` (AC4.7). */
-const summary = computed(() => {
-  const m = props.market
-  if (m === null) return ''
-  return `Volume ${formatUsdCompact(m.volume)}. Closes ${formatEndDate(m.endDate)}.`
-})
+/** Short one-line summary shown under the heading. */
+const summary = computed(
+  () =>
+    `Volume ${formatUsdCompact(props.market.volume)} · Closes ${formatEndDate(props.market.endDate)}`,
+)
 
-function onClose(): void {
-  open.value = false
-  emit('close')
-}
-
-// Inline (lg two-pane) focus handoff: selecting a card moves focus to the detail
-// region heading so keyboard users land in the new content — WITHOUT a focus trap
-// (that belongs to the modal/sheet, owned by SJModal). Fires only in inline mode
-// and only when the selected market actually changes, never on initial mount.
+// Focus handoff: move focus to the region heading when the view opens and whenever
+// the selected market changes — WITHOUT a focus trap (that belongs to the Settings
+// modal, owned by the shell). `tabindex=-1` keeps the heading out of the tab order.
 const headingRef = useTemplateRef<HTMLElement>('headingRef')
+async function focusHeading(): Promise<void> {
+  await nextTick()
+  headingRef.value?.focus()
+}
+onMounted(focusHeading)
 watch(
-  () => props.market?.id,
-  async (id, prev) => {
-    if (!props.inline || !id || id === prev) return
-    await nextTick()
-    headingRef.value?.focus()
+  () => props.market.id,
+  (id, prev) => {
+    if (id !== prev) void focusHeading()
   },
 )
 </script>
 
 <template>
-  <!-- INLINE (lg two-pane): a labelled region, not a dialog. -->
-  <section
-    v-if="inline"
-    class="w-market-detail w-market-detail--inline"
-    :aria-labelledby="market ? titleId : undefined"
-    aria-label="Market detail"
-  >
-    <template v-if="market">
-      <header class="w-market-detail__head">
-        <!-- tabindex=-1: programmatically focusable for the card→detail handoff,
-             but kept out of the tab order (not a control). -->
-        <h2 :id="titleId" ref="headingRef" tabindex="-1" class="w-market-detail__title">
-          {{ market.question }}
-        </h2>
-      </header>
-      <WMarketDetailBody
-        v-model:outcome-index="outcomeIndex"
-        :market="market"
-        :betting-service="bettingService"
-        :bets-recorder="betsRecorder"
-        :ai-controller="aiController"
-        @open-settings="emit('open-settings')"
-        @filled="emit('filled', $event)"
-      />
-    </template>
-
-    <!-- Nothing selected yet — a quiet placeholder, never a dead pane. -->
-    <div v-else class="w-market-detail__placeholder">
-      <p class="w-market-detail__placeholder-title">Select a market</p>
-      <p class="w-market-detail__placeholder-body">
-        Choose a market from the list to see its outcomes and place a simulated bet.
-      </p>
+  <section class="w-market-detail" :aria-labelledby="titleId" aria-label="Market detail">
+    <div class="w-market-detail__bar">
+      <SJButton variant="ghost" size="sm" class="w-market-detail__back" @click="emit('back')">
+        <span aria-hidden="true">←</span> Back
+      </SJButton>
     </div>
-  </section>
 
-  <!-- MODAL / SHEET (base & md): dialog semantics live here (AC4.7). -->
-  <SJModal
-    v-else-if="market"
-    v-model:open="open"
-    :title="market.question"
-    describe
-    close-label="Close market detail"
-    @close="onClose"
-  >
-    <template #summary>{{ summary }}</template>
+    <header class="w-market-detail__head">
+      <!-- tabindex=-1: programmatically focusable for the browse→detail handoff,
+           but kept out of the tab order (not a control). -->
+      <h2 :id="titleId" ref="headingRef" tabindex="-1" class="w-market-detail__title">
+        {{ market.question }}
+      </h2>
+      <p class="w-market-detail__summary">{{ summary }}</p>
+    </header>
+
     <WMarketDetailBody
       v-model:outcome-index="outcomeIndex"
       :market="market"
@@ -136,53 +102,49 @@ watch(
       @open-settings="emit('open-settings')"
       @filled="emit('filled', $event)"
     />
-  </SJModal>
+  </section>
 </template>
 
 <style scoped>
-.w-market-detail--inline {
+.w-market-detail {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  padding: var(--space-6);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  gap: var(--space-4);
+}
+
+.w-market-detail__bar {
+  display: flex;
+}
+
+/* Pull the ghost back-button's padding to the edge so it aligns with the body. */
+.w-market-detail__back {
+  margin-inline-start: calc(-1 * var(--space-3));
 }
 
 .w-market-detail__head {
   display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .w-market-detail__title {
   font-family: var(--font-family-display);
-  font-size: var(--font-size-xl);
+  font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
   line-height: var(--leading-snug);
   color: var(--color-text-heading);
 }
 
-.w-market-detail__placeholder {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-8) var(--space-4);
-  text-align: center;
+.w-market-detail__title:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-sm);
 }
 
-.w-market-detail__placeholder-title {
-  font-family: var(--font-family-sans);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-heading);
-}
-
-.w-market-detail__placeholder-body {
-  max-width: 40ch;
-  margin-inline: auto;
-  font-size: var(--font-size-base);
-  line-height: var(--leading-relaxed);
+.w-market-detail__summary {
+  font-size: var(--font-size-sm);
+  line-height: var(--leading-normal);
   color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 </style>
