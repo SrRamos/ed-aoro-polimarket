@@ -40,7 +40,7 @@ The repo is already scaffolded (`feature/polymarket-widget`): Vite 8 + Vue 3.5 +
 
 **Integration seams:**
 - All `fetch` flows through `http.ts` (NFR-SVC-1). Components/stores never call `fetch`.
-- Betting is selected by a factory keyed on `VITE_BET_MODE` (D2/AC9.5); only `MockBettingService` ships.
+- Betting is selected by a factory keyed on `VITE_BET_MODE` (D2/AC9.5); only `MockBettingService` ships. When `real` is set but no CLOB adapter exists, the factory **fails safe** — returning a disabled betting state with a "real betting mode is not available" message — and never throws at startup (C10/AC9.5), so flipping the flag can never take the widget down.
 - AI request path is selected by `VITE_AI_MODE` (AC9.6); only `user-key` (browser → OpenRouter) ships.
 - Config is centralized in one `src/config.ts` reading `import.meta.env.VITE_*` with safe defaults (`bet=mock`, `ai=user-key`, `gammaBase=https://gamma-api.polymarket.com`).
 
@@ -76,7 +76,7 @@ interface AiPrediction { recommendedOutcome: string; confidence: number; rationa
 
 ```ts
 type AppError =
-  | { kind: 'network' | 'timeout' | 'cors' | 'parse' }                    // http.ts
+  | { kind: 'network' | 'timeout' | 'cors' | 'parse' | 'offline' }        // http.ts ('offline' = navigator.onLine false, C17)
   | { kind: 'http'; status: number; retryAfter?: number }                // http.ts (429 carries retryAfter)
   | { kind: 'validation' | 'sim-failure' }                               // betting.service
   | { kind: 'no-key' | 'rate-limit' | 'parse-fail' | 'outcome-mismatch' } // openrouter.service
@@ -86,6 +86,7 @@ type AppError =
 - `http.ts` normalizes transport failures; services layer their own kinds on top. **429 with `Retry-After` is modelled distinctly** (`kind:'http', status:429, retryAfter`) so the UI backs off and does **not** auto-retry, separate from a hard failure (closes D004, UI F13; AC7.9).
 - **Throw-vs-Result contract:** services return a `Result<T, AppError>` (no throwing across the service boundary); `normalizeMarket` returns `null` for a malformed item (excluded, never thrown). Aborted (superseded) requests are swallowed, not surfaced as errors (AC2.2).
 - **Retry discipline (C4):** `http.ts` retries **only** `network`/`timeout`/`5xx` with backoff — never 4xx, never a 429.
+- **Offline handling (C17 / AC2.8):** `http.ts` short-circuits when `navigator.onLine === false`, returning a distinct `offline` `AppError` (not a generic `network` error) rather than firing or retrying — so the debounced search does **not** retry-storm while offline. `useMarketSearch` (`compose:T401`) subscribes to `window` `online`/`offline` events, surfaces a distinct offline UI state, suppresses requests while offline, and auto-resumes the pending query on `online`.
 
 **UI state as a discriminated union (T11):**
 
@@ -103,7 +104,7 @@ Every list/detail/AI panel models its state as `RequestState<T>` so impossible c
 
 **Deterministic formatting (T12 / NFR-INTL-1):** all `%`, currency (volume/liquidity/cost/payout), and `endDate` render through `utils/format.ts` using pinned-locale `Intl.NumberFormat`/`Intl.DateTimeFormat` — kills `62%`/`62.0%` drift and non-deterministic `toLocaleString` tests.
 
-**localStorage hardening (T13 / AC6.1, AC6.4):** per-item schema+type validation on **read** — drop only the invalid item, keep the rest (no wipe-on-tamper DoS); on **write**, catch `QuotaExceededError` and storage-unavailable (Safari Private / disabled) and surface a non-blocking "couldn't save locally" notice (and do NOT show a receipt for an unpersisted bet). Corrupt storage → distinct `role="status"` recoverable notice, never the first-run onboarding message.
+**localStorage hardening (T13 / AC6.1, AC6.4):** per-item schema+type validation on **read** — drop only the invalid item, keep the rest (no wipe-on-tamper DoS); on **write**, catch `QuotaExceededError` and storage-unavailable (Safari Private / disabled) and surface a non-blocking "couldn't save locally" notice (and do NOT show a receipt for an unpersisted bet). Corrupt storage → distinct `role="status"` recoverable notice, never the first-run onboarding message. **Cross-tab reconciliation (C12 / AC6.5):** `bets.store`/`settings.store` register a `window` `storage`-event listener that re-reads and re-validates (per-item) the changed `localStorage` payload, so positions and the AI key stay consistent across tabs without a reload.
 
 ---
 
@@ -131,7 +132,7 @@ Every list/detail/AI panel models its state as `RequestState<T>` so impossible c
 ```
 Content-Security-Policy:
   default-src 'self';
-  script-src 'self' 'sha256-<vite-inline-preload-hashes>';   /* explicit; hash-based (see delivery decision) */
+  script-src 'self' 'sha256-<vite-inline-hashes>';   /* explicit; hash-based (see delivery decision) */
   style-src 'self' 'unsafe-inline';                          /* proportional bars use :style width attrs — no nonce/hash possible (ARCH F5) */
   img-src 'self' https://*.polymarket.com data:;             /* narrowed off the https: wildcard (key-exfil via new Image().src) */
   connect-src 'self' https://gamma-api.polymarket.com https://openrouter.ai;  /* + https://clob.polymarket.com only if live pricing (D3) is enabled */
@@ -173,7 +174,7 @@ Client SPA, no server hot path. Budgets (no constitution exists → derived from
 |---|---|---|---|
 | P1 | Search request storm on keystroke | could burst Gamma | debounce ~300 ms + abort superseded (AC2.2) |
 | P2 | Runtime model discovery (`/models`) latency on first AI call | adds ~1 RTT | cache picked model id in memory for the session; discover once per prediction session |
-| P3 | Default-list render cost | low | cap `limit=20` (AC3.1); proportional bars are CSS `transform`/width, no JS layout; virtualization unnecessary at 20 |
+| P3 | List render cost (default + search) | low | default list caps `limit=20` (AC3.1); **search caps `limit=50` on `/public-search` (AC2.1, C5)**; proportional bars are CSS `transform`/width, no JS layout; virtualization unnecessary at ≤50 — but if a rendered result set would exceed **50**, `WMarketList` (`widget:T602`) virtualizes or offers "show more" rather than mounting the full list (threshold defined here + AC2.1) |
 | P4 | Synchronous `localStorage` read on mount | negligible | small payload; parse once into Pinia |
 | P5 | Web-font FOIT / CLS / LCP + supply-chain (Rubik / Red Hat Display) | could delay LCP + font-swap CLS + CDN privacy vector | **self-host** subsetted **WOFF2** with inline `@font-face` (no Google CDN); `font-display: optional` (or `size-adjust`/`ascent-override`/`descent-override` tuned to the `system-ui` fallback) to kill swap CLS; removes the render-blocking cross-origin stylesheet and the `default-src 'self'` vs font-CDN CSP contradiction (T2/PERF-04,05,16, SEC S6) |
 | P6 | N+1 / DB fanout | N/A | no DB; each Gamma call is a single GET |
@@ -255,7 +256,7 @@ No declared budget (no `constitution.md`). Ceiling: if Workers exceeds free tier
 
 | Flag (env var) | Namespace | Default | Rollout | Owner |
 |---|---|---|---|---|
-| `VITE_BET_MODE` = `mock`\|`real` | `bet.mode` | `mock` | `real` inert until Phase-2 `/api/bet` exists (AC9.5) | widget team |
+| `VITE_BET_MODE` = `mock`\|`real` | `bet.mode` | `mock` | `real` inert until Phase-2 `/api/bet` exists — when set without an adapter the factory **fails safe to a disabled betting state** (clear message, no throw/crash), it does not go live (AC9.5, C10) | widget team |
 | `VITE_AI_MODE` = `user-key`\|`proxy` | `ai.mode` | `user-key` | `proxy` inert until Phase-2 `/api/ai/predict` exists (AC9.6) | widget team |
 | AI feature enable | runtime | off | on when a valid OpenRouter key is present in Settings (AC7.1/7.2) | widget team |
 

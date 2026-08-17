@@ -103,7 +103,7 @@ IF a parsed price is non-numeric or falls outside `[0,1]`, THEN THE SYSTEM SHALL
 
 <a id="ac2-1"></a>
 **AC2.1** (Event-driven, happy)
-WHEN the user types a query and the input settles after the debounce interval, THE SYSTEM SHALL request matching markets from the search service and render the results as a list of market cards.
+WHEN the user types a query and the input settles after the debounce interval, THE SYSTEM SHALL request matching markets from the search service with a bounded result cap (`limit=50` passed to `/public-search`) and render the results as a list of market cards, virtualizing or offering a "show more" affordance when more than 50 results would render (so an unbounded result set never mounts thousands of DOM nodes at once).
 
 <a id="ac2-2"></a>
 **AC2.2** (Event-driven, debounce)
@@ -128,6 +128,10 @@ WHILE the search input is empty, THE SYSTEM SHALL show the default browse list (
 <a id="ac2-7"></a>
 **AC2.7** (Ubiquitous, search input semantics)
 THE SYSTEM SHALL render the search field as `type="search"` with `enterkeyhint="search"` and `autocomplete="off"`, carrying a persistent visible label, so the on-screen keyboard and clear affordance match a search intent.
+
+<a id="ac2-8"></a>
+**AC2.8** (Unwanted-behavior, offline)
+IF the device is offline (`navigator.onLine === false`, or a `window` `offline` event has fired), THEN THE SYSTEM SHALL surface a **distinct offline state** — separate from a generic network/error state — and SHALL NOT issue or retry the debounced search request while offline (no retry-storm), automatically resuming the pending query when a `window` `online` event restores connectivity.
 
 ---
 
@@ -249,6 +253,10 @@ WHILE no positions exist, THE SYSTEM SHALL show a first-run empty state that exp
 **AC6.4** (Unwanted-behavior, corrupt storage)
 IF the persisted positions payload is missing, fails to parse, or contains invalid items, THEN THE SYSTEM SHALL recover without crashing by validating each item against its schema on read and dropping only the invalid item(s) (never a wipe-on-tamper of the whole store); a corrupt/tampered payload SHALL surface a distinct recoverable notice (`role="status"`) that is NOT the first-run onboarding empty state.
 
+<a id="ac6-5"></a>
+**AC6.5** (Event-driven, cross-tab reconciliation)
+WHEN a `window` `storage` event fires indicating the persisted positions or settings changed in another tab, THE SYSTEM SHALL reconcile its in-memory state from the updated `localStorage` payload — re-validating each item per AC6.4 — so positions and the AI key stay consistent across tabs without requiring a reload.
+
 ---
 
 ### US7 — AI-assisted prediction (bonus)
@@ -342,8 +350,8 @@ THE SYSTEM SHALL source runtime configuration from environment variables, includ
 IF a value is a secret (any API key or credential), THEN THE SYSTEM SHALL keep it out of the client bundle and out of version control, exposing it only to server-side code; public build-time config MUST NOT contain any secret.
 
 <a id="ac9-5"></a>
-**AC9.5** (State-driven, default simulation)
-WHILE the betting-mode configuration is unset or set to `mock`, THE SYSTEM SHALL use the simulated betting path (default), and WHILE it is set to `real`, THE SYSTEM SHALL route bets to the server-side adapter.
+**AC9.5** (Complex, default simulation + fail-safe real)
+WHILE the betting-mode configuration is unset or set to `mock`, THE SYSTEM SHALL use the simulated betting path (default), and WHILE it is set to `real`, THE SYSTEM SHALL route bets to the server-side adapter. IF `VITE_BET_MODE=real` but no real (CLOB) betting adapter is available, THEN THE SYSTEM SHALL **fail safe** — degrading to a disabled betting state that surfaces a clear "real betting mode is not available" message — and SHALL NOT throw at startup or otherwise crash the widget (flipping the flag must never take the app down).
 
 <a id="ac9-6"></a>
 **AC9.6** (Complex, AI mode reconciliation)
@@ -364,14 +372,14 @@ THE SYSTEM SHALL keep the deployment/ops capability independent of the core widg
 > These restate the testable core of each story in Given/When/Then form; the authoritative, atomic criteria are the EARS ACs in §3.
 
 - **US1 — Normalization.** Given a Gamma market with JSON-encoded string arrays, When it is normalized, Then `outcomes`/`prices`/`tokenIds` are aligned typed arrays and a malformed market is excluded (AC1.1–AC1.5).
-- **US2 — Search.** Given text in the search box, When input settles after debounce, Then at most one request runs, results/empty/loading/error states render correctly, the result count is announced on settle, no-results offers a recovery path, and the field uses search input semantics (AC2.1–AC2.7).
+- **US2 — Search.** Given text in the search box, When input settles after debounce, Then at most one capped (`limit=50`) request runs, results/empty/loading/error/offline states render correctly, results virtualize/"show more" beyond 50, the result count is announced on settle, no-results offers a recovery path, the field uses search input semantics, and while offline a distinct offline state shows with no retry-storm (AC2.1–AC2.8).
 - **US3 — Browse.** Given a fresh load with no query, When the page mounts, Then top-by-volume active markets render with skeletons while loading and an explicit empty/error state otherwise (AC3.1–AC3.5).
 - **US4 — Detail.** Given a market card, When selected, Then the detail opens as a `role="dialog"` (mobile sheet → md+ centered/two-pane) with outcomes signalled by triad+text (neutral chips when >2 outcomes), selection drives the bet form, and focus returns on close (AC4.1–AC4.7).
 - **US5 — Bet.** Given a selected outcome and a valid amount, When the user confirms via a review step, Then cost = size×price and payout = (size/price)×$1 are shown live, a finite-guarded simulated receipt (`avgPrice = prices[i]`) is produced, the in-flight control is guarded against double-submit, the position persists, and invalid input/no-outcome/non-finite-price/service-failure are blocked with specific field-linked feedback (AC5.0.5–AC5.8).
-- **US6 — Positions.** Given placed bets, When the page reloads, Then positions restore from `localStorage`; an empty first-run state shows when none exist; corrupt storage recovers to empty (AC6.1–AC6.4).
+- **US6 — Positions.** Given placed bets, When the page reloads, Then positions restore from `localStorage`; an empty first-run state shows when none exist; corrupt storage recovers to empty; and a `storage` event from another tab reconciles positions/settings without a reload (AC6.1–AC6.5).
 - **US7 — AI.** Given a configured key, When the user explicitly requests a suggestion, Then exactly one request runs, the model is discovered at runtime, output is parsed via the ladder and validated (`recommendedOutcome` ∈ outcomes, confidence clamped), rendered with a numeric confidence signal + disclaimer, and failures show retry without surfacing invalid results (AC7.1–AC7.10).
 - **US8 — Settings.** Given the Settings form, When the user saves/clears a key, Then it is persisted/removed in `localStorage`, the AI feature toggles accordingly, the disclaimer shows, no key is ever bundled, and the field follows DS form conventions (AC8.1–AC8.5).
-- **US9 — Deployment / Ops.** Given a merge to `main`, When the pipeline runs, Then the full gate runs before an automatic deploy; env vars drive config including the `mock`/`real` betting switch and `user-key`/`proxy` AI switch; secrets never reach the client bundle or version control; a bad build can be rolled back; and none of this blocks the core widget in local dev (AC9.1–AC9.8).
+- **US9 — Deployment / Ops.** Given a merge to `main`, When the pipeline runs, Then the full gate runs before an automatic deploy; env vars drive config including the `mock`/`real` betting switch (which fails safe to a disabled betting state, never a crash, when `real` has no adapter) and `user-key`/`proxy` AI switch; secrets never reach the client bundle or version control; a bad build can be rolled back; and none of this blocks the core widget in local dev (AC9.1–AC9.8).
 
 ---
 

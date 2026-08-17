@@ -30,7 +30,7 @@ Widget de Polymarket en una sola página (Vue 3) que permite: **buscar mercados*
 ## 3. Stack
 
 - **Vue 3** (`<script setup>`, Composition API) + **Vite**.
-- **TypeScript** (recomendado — contratos claros para services y modelos; el reviewer lo valora). *Confirmar con el usuario si prefiere JS.*
+- **TypeScript** (recomendado — contratos claros para services y modelos; el reviewer lo valora). Confirmado en §9.
 - **Pinia** para estado (mercados, selección, posiciones/apuestas, settings IA).
 - **@ramoslabs/tokens** para todo el styling (CSS vars).
 - **Vitest** + **@vue/test-utils** para unit; **Playwright** opcional para 1 flujo E2E.

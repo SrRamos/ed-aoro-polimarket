@@ -17,7 +17,7 @@
 ## Group 1 — Models & HTTP (after Group 0; parallel-safe)
 
 - [ ] `model: T101` — `models/market.ts`, `models/bet.ts`, `models/prediction.ts` type contracts (refs: AC1.*, AC5.1, AC7.*, plan §2)
-- [ ] `svc: T102` — `services/http.ts` fetch wrapper: base URL, 10s timeout, `AbortController`, unified `AppError` union + `RequestState<T>` discriminated union; retry **only** `network`/`timeout`/`5xx` with backoff (never 4xx/429); model `429` + `Retry-After` distinctly (no auto-retry); `Result<T,AppError>` (no throw across the seam) (refs: NFR-SVC-1, NFR-SVC-2, AC2.5, AC7.9, T11, C4, plan §2 error-model)
+- [ ] `svc: T102` — `services/http.ts` fetch wrapper: base URL, 10s timeout, `AbortController`, unified `AppError` union + `RequestState<T>` discriminated union; retry **only** `network`/`timeout`/`5xx` with backoff (never 4xx/429); model `429` + `Retry-After` distinctly (no auto-retry); **short-circuit when `navigator.onLine === false` — surface a distinct `offline` `AppError` kind instead of firing/retrying the request (no retry-storm)**; `Result<T,AppError>` (no throw across the seam) (refs: NFR-SVC-1, NFR-SVC-2, AC2.5, AC2.8, AC7.9, T11, C4, C17, plan §2 error-model)
 - [ ] `setup: T103` — Vite dev proxy for Gamma as CORS contingency (no call-site change) (refs: NFR-SVC-2)
 - [ ] `util: T104` — `utils/format.ts`: pinned-locale `Intl.NumberFormat`/`Intl.DateTimeFormat` for %, currency (volume/liquidity/cost/payout), and `endDate`; single source used by all rendering components (refs: NFR-INTL-1, T12)
 
@@ -27,11 +27,11 @@
   - [ ] `svc: T201.1` — `normalizeMarket(raw: unknown)`: schema-validate the **whole** payload (zod or disciplined hand-rolled) then `JSON.parse` outcomes/outcomePrices/clobTokenIds → positionally-aligned arrays, prices→number (refs: AC1.1, AC1.2, AC1.3, AC1.4, T8)
   - [ ] `svc: T201.2` — malformed guard: missing/wrong-type field, invalid-JSON, or unequal-length → return `null`, caller excludes; validate both response envelopes (`/markets` array, `/public-search {events,tags,profiles}`); never throw (refs: AC1.4, T8)
   - [ ] `svc: T201.3` — clamp price to `[0,1]`, set `pricingReliable=false`, never render `NaN` (refs: AC1.5)
-  - [ ] `svc: T201.4` — `searchMarkets(q)` → `/public-search`; `getMarkets()` → `/markets?closed=false&active=true&order=volume&ascending=false&limit=20`; `getMarket(slug)`; all reads are public unauthenticated GETs (no API key/secret) (refs: AC2.1, AC3.1, AC4.1, NFR-SEC-3)
+  - [ ] `svc: T201.4` — `searchMarkets(q)` → `/public-search?limit=50` (bounded result cap, never unbounded); `getMarkets()` → `/markets?closed=false&active=true&order=volume&ascending=false&limit=20`; `getMarket(slug)`; all reads are public unauthenticated GETs (no API key/secret) (refs: AC2.1, AC3.1, AC4.1, NFR-SEC-3, C5)
 - [ ] `svc: T202` — `betting.service.ts`: `interface BettingService` + `MockBettingService` (refs: AC5.1, NFR-SVC-3, D2)
   - [ ] `svc: T202.1` — validate size>0 & price; **reject when `price<=0` or `!Number.isFinite(price)`**; `cost=size×price`, `shares=size/price`, `payout=shares×$1`; assert `Number.isFinite` on cost/shares/payout before receipt/persist; `avgPrice = prices[i]` (closes D005) (refs: AC5.2, AC5.3, T3)
   - [ ] `svc: T202.2` — simulated delay → receipt `{status:'filled',avgPrice,shares,cost,txHash:'mock-0x…'}`; reject path for failures (refs: AC5.1, AC5.7)
-  - [ ] `svc: T202.3` — factory selects impl by `VITE_BET_MODE` (only `mock` ships; `real` throws not-implemented) (refs: AC9.5)
+  - [ ] `svc: T202.3` — factory selects impl by `VITE_BET_MODE` (only `mock` ships); when `real` is set but no CLOB adapter exists, **fail safe** — return a disabled betting state exposing a clear "real betting mode is not available" message; **never throw at startup / crash the widget** (refs: AC9.5, C10)
 - [ ] `svc: T203` — `openrouter.service.ts` (refs: AC7.3–AC7.6, AC7.10, AC9.6)
   - [ ] `svc: T203.1` — `pickFreeModel(key)`: fetch `/models`, preference chain → `structured_outputs` free → `openrouter/free`; cache per session (refs: AC7.4, plan §4 P2)
   - [ ] `svc: T203.2` — `predict(market,key)`: system+user prompt, `temperature≤0.2`, `Authorization` header only, `HTTP-Referer`/`X-Title` (refs: AC7.3, NFR-SEC-2)
@@ -41,12 +41,12 @@
 ## Group 3 — Stores (after Group 2)
 
 - [ ] `store: T301` — `markets.store.ts`: list, search results, selected market/outcome (refs: AC2.*, AC3.*, AC4.3)
-- [ ] `store: T302` — `bets.store.ts`: positions + `localStorage` persist with `schemaVersion`; **per-item** schema+type validation on read → drop only invalid item(s), keep the rest (no wipe-on-tamper); on write catch `QuotaExceededError`/storage-unavailable → non-blocking "couldn't save locally" notice (no receipt for an unpersisted bet); corrupt payload → distinct `role="status"` notice, NOT the first-run empty state (refs: AC6.1, AC6.4, T3, T13)
-- [ ] `store: T303` — `settings.store.ts`: OpenRouter key persist/clear in `localStorage`; toggles AI enablement (refs: AC8.1, AC8.2)
+- [ ] `store: T302` — `bets.store.ts`: positions + `localStorage` persist with `schemaVersion`; **per-item** schema+type validation on read → drop only invalid item(s), keep the rest (no wipe-on-tamper); on write catch `QuotaExceededError`/storage-unavailable → non-blocking "couldn't save locally" notice (no receipt for an unpersisted bet); corrupt payload → distinct `role="status"` notice, NOT the first-run empty state; **cross-tab sync — a `window` `storage`-event listener reconciles positions from the updated `localStorage` payload (re-validating per-item per AC6.4) so tabs stay consistent without reload** (refs: AC6.1, AC6.4, AC6.5, T3, T13, C12)
+- [ ] `store: T303` — `settings.store.ts`: OpenRouter key persist/clear in `localStorage`; toggles AI enablement; **cross-tab sync — `window` `storage`-event listener reconciles the AI key/settings across tabs without reload** (refs: AC8.1, AC8.2, AC6.5, C12)
 
 ## Group 4 — Composables (after Group 3)
 
-- [ ] `compose: T401` — `useMarketSearch.ts`: ~300ms debounce, ≤1 in-flight (abort superseded), loading/empty/error/cleared states as `RequestState<T>`; announce **result count** on settle (polite); no-results recovery (echo+preserve query, clear affordance, top-by-volume fallback); empty input → browse list (refs: AC2.2, AC2.3, AC2.4, AC2.5, AC2.6, T11, T17)
+- [ ] `compose: T401` — `useMarketSearch.ts`: ~300ms debounce, ≤1 in-flight (abort superseded), loading/empty/error/cleared states as `RequestState<T>`; announce **result count** on settle (polite); no-results recovery (echo+preserve query, clear affordance, top-by-volume fallback); empty input → browse list; **offline handling — `navigator.onLine` + `window` `online`/`offline` listeners: show a distinct offline state (not a generic network error), suppress the debounced request while offline (no retry-storm), and auto-resume the pending query on `online`** (refs: AC2.2, AC2.3, AC2.4, AC2.5, AC2.6, AC2.8, T11, T17, C17)
 - [ ] `compose: T402` — `useAiPrediction.ts`: on-demand single call, loading/error/retry; distinguish `429` rate-limit (honor `Retry-After`, no auto-retry) from hard failure (refs: AC7.3, AC7.7, AC7.9, T11)
 
 ## Group 5 — UI primitives `SJ*` (after Group 0; parallel-safe)
@@ -62,7 +62,7 @@
 ## Group 6 — Widgets `W*` (after Groups 4 & 5)
 
 - [ ] `widget: T601` — `WMarketSearch`: labelled input with **search semantics** (`type="search"` + `enterkeyhint="search"` + `autocomplete="off"`), debounce wired, live-region loading/result-count/empty/error (refs: AC2.1–AC2.7, T15)
-- [ ] `widget: T602` — `WMarketList` + `WMarketCard`: question, each outcome + % (via `utils/format.ts`) with proportional bar animated by `transform: scaleX()` (reduced-motion gated), keyed `v-for` on `market.id`; **images reserve space** (`width/height` or `aspect-ratio`) + `loading="lazy"`/`decoding="async"` below fold (eager LCP image) + `preconnect` + broken-image fallback + skeleton mirrors card height; **multi-column card grid at md+**; explicit empty/error (refs: AC3.1–AC3.5, NFR-INTL-1, NFR-MF-5, T7, C1, C3, C14, plan §4)
+- [ ] `widget: T602` — `WMarketList` + `WMarketCard`: question, each outcome + % (via `utils/format.ts`) with proportional bar animated by `transform: scaleX()` (reduced-motion gated), keyed `v-for` on `market.id`; **images reserve space** (`width/height` or `aspect-ratio`) + `loading="lazy"`/`decoding="async"` below fold (eager LCP image) + `preconnect` + broken-image fallback + skeleton mirrors card height; **multi-column card grid at md+**; **virtualization/"show more" threshold — beyond 50 rendered results, virtualize or paginate rather than mounting the full list** (search is capped at `limit=50` upstream, T201.4); explicit empty/error (refs: AC2.1, AC3.1–AC3.5, NFR-INTL-1, NFR-MF-5, T7, C1, C3, C5, C14, plan §4 P3)
 - [ ] `widget: T603` — `WMarketDetail` (via `SJModal`, dialog semantics + mobile sheet): outcomes selectable via success/error triad **+ text/icon** for binary, **neutral chip (color+text, no forced success/error) when >2 outcomes**; price %/volume/liquidity via `utils/format.ts`; selection drives bet form; close→focus return; closed market → disable + text reason; **inline right pane at md/lg** (refs: AC4.1–AC4.7, NFR-A11Y-2, NFR-MF-5)
 - [ ] `widget: T604` — `WBetForm`: outcome + amount field (`type="text"` + `inputmode="decimal"`, ≥16px), live cost/payout, **review-and-confirm step before placeBet**, **in-flight disable + `aria-busy`** (no double-submit), `aria-invalid`+`aria-describedby` inline error (`:user-invalid`), no-outcome guard, disabled-until-valid, sticky bottom CTA on mobile with `env(safe-area-inset-bottom)` (never obscuring focus) (refs: AC5.0.5, AC5.1, AC5.1a, AC5.4, AC5.5, AC5.8, NFR-MF-4, NFR-A11Y-6, T15)
 - [ ] `widget: T605` — `WBetReceipt`: toast via live region + add position, no reload; do NOT surface a receipt for a bet that failed to persist (refs: AC5.6, AC6.1)
@@ -124,7 +124,7 @@ Group 9  (after 8):   docs:T901  docs:T902  docs:T903
 
 ## Coverage check
 
-**TRUE — every AC and every NFR is referenced by ≥1 task.** ACs AC1.1–AC9.8 including the added AC2.7, AC4.6, AC4.7, AC5.0.5, AC5.1a, AC5.8, AC8.6 (and the extended AC1.4/2.3/2.4/5.3/5.4/6.1/6.4/7.2/7.9/8.3/9.2) each have an owning task. NFR families and their owning task(s):
+**TRUE — every AC and every NFR is referenced by ≥1 task.** ACs AC1.1–AC9.8 including the added AC2.7, AC2.8 (offline, C17 → T102/T401), AC4.6, AC4.7, AC5.0.5, AC5.1a, AC5.8, AC6.5 (cross-tab sync, C12 → T302/T303), AC8.6 (and the extended AC1.4/2.1[C5]/2.3/2.4/5.3/5.4/6.1/6.4/7.2/7.9/8.3/9.2/9.5[C10, fail-safe real]) each have an owning task. NFR families and their owning task(s):
 - **DS-1..8** → T001, T501–T507, T602/T603/T607. **THEME-1** → T001.
 - **MF-1** → T001/T609; **MF-2** → T501; **MF-3** → T502; **MF-4** → T604; **MF-5** (new) → T602/T603/T606/T609.
 - **A11Y-1..5** → T501–T507, T706; **A11Y-6** (new) → T604/T609/T706; **A11Y-7** (new) → T001/T609/T706.
@@ -134,4 +134,4 @@ Group 9  (after 8):   docs:T901  docs:T902  docs:T903
 
 QA (`test:`), security (`security:`), and docs (`docs:`) tasks exist per user story. `security:T710` (HTTP security headers, NFR-SEC-4) is **core/blocking** in Group 7. Groups 8–9 (deploy/AI-proxy/real-betting infra) remain bonus scope and do not gate Groups 0–7 (core deliverable).
 
-**Task count:** 54 top-level tasks (was 47) + 11 subtasks = **65 task line items** (was 58). New tasks added by this remediation: `setup:T004`, `setup:T005`, `util:T104`, `test:T712`, `security:T710`, `test:T711`, `security:T806`.
+**Task count:** 54 top-level tasks (was 47) + 11 subtasks = **65 task line items** (was 58). New tasks added by the prior remediation: `setup:T004`, `setup:T005`, `util:T104`, `test:T712`, `security:T710`, `test:T711`, `security:T806`. The low-severity closeout (C5/C10/C12/C17) added **no new tasks** — it extended existing tasks (T201.4, T602, T202.3, T102, T401, T302, T303), so the count is unchanged. AC count: **64** (added AC2.8, AC6.5; was 62).
