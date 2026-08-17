@@ -5,6 +5,8 @@
 > [`research-polymarket-api.md`](./research-polymarket-api.md) ·
 > [`research-openrouter-ai.md`](./research-openrouter-ai.md) ·
 > [`research-ramoslabs-ds.md`](./research-ramoslabs-ds.md)
+>
+> **Auditoría externa multi-lente:** las remediaciones pre-código (headers CSP core-gated, validación de payload completo, guardas de finitud en bet math, scale-up responsive, taxonomía de errores, etc.) están en [`spec-audit-external.md`](./spec-audit-external.md) y ya reflejadas en `specs/polymarket-widget/{spec,plan,tasks}.md`. Este doc queda reconciliado con esa auditoría (ver notas en §4/§5 y D3).
 
 ## 1. Objetivo
 
@@ -16,7 +18,7 @@ Widget de Polymarket en una sola página (Vue 3) que permite: **buscar mercados*
 |---|---|---|
 | D1 | **Datos de mercado y búsqueda: REALES** vía Gamma API (público, sin auth, CORS `*`) | No requiere key, browser-friendly, sin geoblock en reads |
 | D2 | **Apuesta: SIMULADA (mock)** tras interfaz `BettingService` | Órdenes reales exigen wallet + EIP-712 + HMAC secret + USDC + backend, y trading está geobloqueado. Inviable/inseguro solo-browser en 48h. Interfaz swappable deja el path real como extensión futura |
-| D3 | **Precio en vivo: CLOB `/price` opcional**; snapshot de Gamma basta para MVP | Menos llamadas, más simple; se puede enriquecer |
+| D3 | **Precio en vivo: CLOB `/price` DIFERIDO** (no en MVP); snapshot de Gamma (`outcomePrices`) es la fuente de precio | Menos llamadas, más simple; enhancement futuro (spec §6, out of scope). `getLivePrice` / `connect-src https://clob.polymarket.com` solo si se habilita |
 | D4 | **IA: OpenRouter, modelo free, opt-in** con key provista por el usuario en Settings (`localStorage`) | La feature es bonus/opcional; evita exponer key propia; disclaimer + mención de proxy como camino de producción |
 | D5 | **Modelo IA con discovery en runtime** + fallback chain (`z-ai/glm-5.2:free` → nemotron → gpt-oss) | El roster `:free` cambia semanalmente; hardcodear un ID se rompe |
 | D6 | **Tema claro únicamente** | El DS v0.1.0 no shippea dark mode; no inventar paleta dark |
@@ -42,7 +44,7 @@ src/
   App.vue                      # layout de la página única
   services/
     http.ts                    # wrapper fetch: base URL, timeout, errores, retry
-    polymarket.service.ts      # searchMarkets, getMarket, getMarkets, getLivePrice
+    polymarket.service.ts      # searchMarkets, getMarket, getMarkets  (getLivePrice / CLOB `/price` is DEFERRED — not built in MVP, see D3 / spec §6)
     betting.service.ts         # interface BettingService + MockBettingService
     openrouter.service.ts      # pickFreeModel, predict(market, apiKey) + parseo robusto
   models/
@@ -66,13 +68,15 @@ src/
 
 ## 5. Capa de servicios (contratos)
 
-**`polymarket.service.ts`** — normaliza el gotcha de arrays string:
+**`polymarket.service.ts`** — normaliza el gotcha de arrays string. **Nota de reconciliación (audit T8/C11, AC1.4/1.5):** el snippet ilustrativo abajo NO es el contrato final. `normalizeMarket(raw: unknown)` **valida por schema el payload completo + el envelope** de respuesta (no solo los 3 arrays), **clampa** cada precio a `[0,1]` marcando `pricingReliable=false` cuando estaba fuera de rango/`NaN`, y **retorna `null`** (el caller excluye) ante campo faltante / JSON inválido / longitudes desiguales — nunca lanza, nunca renderiza `NaN`.
 ```ts
-function normalizeMarket(raw): Market {
+// ILUSTRATIVO (no-clamping) — el contrato real valida+clampa, ver arriba y plan §2:
+function normalizeMarket(raw): Market | null {
+  // 1) schema-validate whole object + envelope; on failure -> return null
   return {
     id: raw.id, question: raw.question, slug: raw.slug,
     outcomes: JSON.parse(raw.outcomes),
-    prices: JSON.parse(raw.outcomePrices).map(Number),
+    prices: JSON.parse(raw.outcomePrices).map(Number), // -> clamp to [0,1], set pricingReliable
     tokenIds: JSON.parse(raw.clobTokenIds),
     volume: raw.volumeNum, liquidity: raw.liquidityNum,
     endDate: raw.endDate, image: raw.image,
@@ -85,10 +89,14 @@ function normalizeMarket(raw): Market {
 **`betting.service.ts`** — mock con misma firma que el real:
 ```ts
 interface BettingService { placeBet(o: BetOrder): Promise<BetReceipt> }
+// BetOrder lleva un solo campo `price` (snapshot). Un futuro ClobBettingService lo mapea al
+// `priceLimit` marketable de la orden — seam documentado, sin drift (audit C11).
 class MockBettingService implements BettingService {
-  // valida size>0 y precio, cost = size*price, shares = size/price (o size @ payout $1),
+  // valida size>0; RECHAZA si price<=0 || !Number.isFinite(price) (audit T3/S5),
+  // cost = size*price, shares = size/price, payout = shares*$1; asserta Number.isFinite en cost/shares/payout,
+  // avgPrice = prices[i] (precio snapshot del outcome seleccionado — cierra D005),
   // delay simulado, retorna { status:'filled', avgPrice, shares, cost, txHash:'mock-0x…' },
-  // persiste Position en bets.store (localStorage)
+  // persiste Position en bets.store (localStorage) con validación por-item + manejo de QuotaExceededError
 }
 ```
 

@@ -92,6 +92,24 @@ Local development:
 - Public config: `.env` / `.env.local` (Vite) — committed values are non-secret only.
 - Local Worker secrets: `.dev.vars` (git-ignored) for `wrangler dev`.
 
+## 3.5 HTTP security headers — core, blocking (NFR-SEC-4)
+
+Per the external audit (T1/C20), the CSP + companion headers are a **core, blocking** requirement — not deploy-bonus — because the widget renders untrusted market/AI text and holds a live key. They ship from a **`dist/_headers`** file (Phase 1 has no Worker → no per-request nonce), so `script-src` uses **build-time hashes** for Vite's inline module-preload; alternatively route `index.html` through a small nonce-injecting Worker. The verifier (`security:T710`) asserts the headers are present **and** the page still boots. Corrected policy (authoritative in `plan.md §3`):
+
+```
+Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-<vite-inline-hashes>';
+  style-src 'self' 'unsafe-inline'; img-src 'self' https://*.polymarket.com data:;
+  connect-src 'self' https://gamma-api.polymarket.com https://openrouter.ai; font-src 'self';
+  object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none';
+  upgrade-insecure-requests; report-to csp-endpoint
+Referrer-Policy: strict-origin-when-cross-origin
+X-Content-Type-Options: nosniff
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+```
+
+Add `https://clob.polymarket.com` to `connect-src` only if live CLOB pricing (D3) is later enabled. Asset caching also lives in `dist/_headers`: `immutable, max-age=31556952` for hashed `/assets/*`, `no-cache` for `index.html`.
+
 ## 4. "Simulation → real" switch design
 
 Two independent switches, both env-driven, so flipping from a demo to "something real" is configuration, not a rewrite.

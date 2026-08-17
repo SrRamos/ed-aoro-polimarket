@@ -61,7 +61,7 @@ interface Market {
   pricingReliable: boolean;    // false when any price was clamped / out of range (AC1.5)
 }
 // models/bet.ts
-interface BetOrder { marketId: string; tokenId: string; outcome: string; side: 'BUY'; size: number; price: number; }
+interface BetOrder { marketId: string; tokenId: string; outcome: string; side: 'BUY'; size: number; price: number; /* snapshot price used for mock cost math; a future ClobBettingService maps this to the order's marketable `priceLimit` — one field, documented seam (C11) */ }
 interface BetReceipt { status: 'filled'; avgPrice: number; shares: number; cost: number; txHash: string; }
 interface Position extends BetReceipt { id: string; marketId: string; question: string; outcome: string; size: number; price: number; createdAt: string; schemaVersion: 1; }
 // models/prediction.ts
@@ -72,7 +72,38 @@ interface AiPrediction { recommendedOutcome: string; confidence: number; rationa
 
 **No database, no server, no migrations.** Persistence is `localStorage` only (`positions`, `settings.openrouterKey`), each with a `schemaVersion` and defensive parse (AC6.4).
 
-**Error model:** `http.ts` normalizes failures to `{ kind: 'network'|'timeout'|'http'|'cors'|'parse', status?, message }`. UI maps `kind` → error state + retry (AC2.5, AC3.4, AC5.7, AC7.9). Aborted (superseded) requests are swallowed, not surfaced as errors (AC2.2).
+**Unified error taxonomy (`AppError`) — one union across all four services (T11 / ARCH F10,F11):**
+
+```ts
+type AppError =
+  | { kind: 'network' | 'timeout' | 'cors' | 'parse' }                    // http.ts
+  | { kind: 'http'; status: number; retryAfter?: number }                // http.ts (429 carries retryAfter)
+  | { kind: 'validation' | 'sim-failure' }                               // betting.service
+  | { kind: 'no-key' | 'rate-limit' | 'parse-fail' | 'outcome-mismatch' } // openrouter.service
+  ;
+```
+
+- `http.ts` normalizes transport failures; services layer their own kinds on top. **429 with `Retry-After` is modelled distinctly** (`kind:'http', status:429, retryAfter`) so the UI backs off and does **not** auto-retry, separate from a hard failure (closes D004, UI F13; AC7.9).
+- **Throw-vs-Result contract:** services return a `Result<T, AppError>` (no throwing across the service boundary); `normalizeMarket` returns `null` for a malformed item (excluded, never thrown). Aborted (superseded) requests are swallowed, not surfaced as errors (AC2.2).
+- **Retry discipline (C4):** `http.ts` retries **only** `network`/`timeout`/`5xx` with backoff — never 4xx, never a 429.
+
+**UI state as a discriminated union (T11):**
+
+```ts
+type RequestState<T> =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'error'; error: AppError }
+  | { status: 'success'; data: T };
+```
+
+Every list/detail/AI panel models its state as `RequestState<T>` so impossible combinations (`loading && error`) are unrepresentable. UI maps `error.kind` → a **fixed, friendly** copy string per kind (C13/C19) — never surfacing raw upstream messages or rationale.
+
+**Global error handling (T5 / NFR-ERR-1):** `main.ts` registers `app.config.errorHandler` → `logEvent` (last-resort capture of uncaught render/lifecycle/watcher errors); an `onErrorCaptured` boundary (`SJErrorBoundary` / `App.vue`) degrades one bad card/panel instead of white-screening.
+
+**Deterministic formatting (T12 / NFR-INTL-1):** all `%`, currency (volume/liquidity/cost/payout), and `endDate` render through `utils/format.ts` using pinned-locale `Intl.NumberFormat`/`Intl.DateTimeFormat` — kills `62%`/`62.0%` drift and non-deterministic `toLocaleString` tests.
+
+**localStorage hardening (T13 / AC6.1, AC6.4):** per-item schema+type validation on **read** — drop only the invalid item, keep the rest (no wipe-on-tamper DoS); on **write**, catch `QuotaExceededError` and storage-unavailable (Safari Private / disabled) and surface a non-blocking "couldn't save locally" notice (and do NOT show a receipt for an unpersisted bet). Corrupt storage → distinct `role="status"` recoverable notice, never the first-run onboarding message.
 
 ---
 
@@ -87,13 +118,34 @@ interface AiPrediction { recommendedOutcome: string; confidence: number; rationa
 | T5 | Secret in client bundle | build config | **HIGH** | strict `VITE_*`=public / Worker-secret split; **no key in `VITE_*` or `vars`**; post-build grep scan of `dist/` | AC9.4, NFR-SEC-1 → `security: T803` |
 | T6 | Clickjacking | hosted page | LOW | `X-Frame-Options: DENY` / CSP `frame-ancestors 'none'` response headers | `security: T703` |
 | T7 | AI rate-limit / cost abuse | OpenRouter free tier (20 req/min) | LOW | **on-demand only**, never auto-call; user's own key/quota | AC7.3 |
-| T8 | Dependency supply chain | npm deps | LOW | versions pinned; OSV.dev scan clean (see §5); Dependabot optional | `ci` gate |
+| T8 | Dependency supply chain | npm deps | MEDIUM | versions pinned + committed lockfile (`npm ci`); OSV.dev scan clean (see §5); **Dependabot required**; blocking `npm audit --audit-level=high` (or osv-scanner) in CI; **SHA-pinned** GitHub Actions | `ci`/merge gate (T19) → `deploy: T802`, `security: T806` |
 | T9 | Over-scoped Cloudflare deploy token | GitHub secret | MEDIUM | least-privilege token (Workers Scripts: Edit on one account); rotate on exposure | deploy doc §7 → `deploy: T802` |
 | T10 | Polymarket ToS / geoblock | reads only | LOW | reads are global+public; **no** trading, **no** VPN bypass (out of scope §6) | spec §6 |
 
 **No CRITICAL-without-mitigation → no `blocked-security`.** Two HIGH (T1, T2, T5) are handled by explicit `security:` gate tasks placed before/with the tasks they cover.
 
-**Security plan (anchor `#security-plan`):** CSP `default-src 'self'; connect-src 'self' https://gamma-api.polymarket.com https://openrouter.ai; img-src 'self' https: data:; frame-ancestors 'none'`; no `v-html`; key only in `Authorization`; no secret in bundle; least-privilege deploy token.
+**Security plan (anchor `#security-plan`):** HTTP security headers are a **core, blocking** requirement (NFR-SEC-4), not deploy-bonus — the core widget renders untrusted market/AI text and holds a live key, so it must not be shippable without them.
+
+**Corrected CSP (T1 — replaces the weak/self-contradictory prior string):**
+
+```
+Content-Security-Policy:
+  default-src 'self';
+  script-src 'self' 'sha256-<vite-inline-preload-hashes>';   /* explicit; hash-based (see delivery decision) */
+  style-src 'self' 'unsafe-inline';                          /* proportional bars use :style width attrs — no nonce/hash possible (ARCH F5) */
+  img-src 'self' https://*.polymarket.com data:;             /* narrowed off the https: wildcard (key-exfil via new Image().src) */
+  connect-src 'self' https://gamma-api.polymarket.com https://openrouter.ai;  /* + https://clob.polymarket.com only if live pricing (D3) is enabled */
+  font-src 'self';                                           /* self-hosted WOFF2 (T2) */
+  object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none';  /* base-uri/object-src do NOT inherit from default-src */
+  upgrade-insecure-requests;
+  report-to csp-endpoint;
+```
+
+Companion headers (C20): `Referrer-Policy: strict-origin-when-cross-origin`, `X-Content-Type-Options: nosniff`, `Permissions-Policy` (deny camera/mic/geolocation/…), `Strict-Transport-Security`.
+
+**Static-delivery decision (S4):** Phase 1 has no Worker, so headers ship from a `dist/_headers` file (no per-request nonce available). Therefore `script-src` uses **build-time hash-based** allowances for Vite's inline module-preload — OR `index.html` is routed through a small nonce-injecting Worker. The header verifier task (core Group 7) MUST assert **"CSP present AND the page still boots"**.
+
+Other invariants: no `v-html` on external data (`vue/no-v-html` **error**); key only in `Authorization`; no secret in the bundle; least-privilege deploy token; supply-chain merge gate (T19, see §5).
 
 ---
 
@@ -101,14 +153,21 @@ interface AiPrediction { recommendedOutcome: string; confidence: number; rationa
 
 Client SPA, no server hot path. Budgets (no constitution exists → derived from web.dev norms + research):
 
-| Budget | Target |
-|---|---|
-| JS bundle (gzip) | ≤ 150 KB (Vue+Pinia ≈ 60 KB + app; **no UI/chart lib** — D7/analysis §3) |
-| LCP | ≤ 2.5 s (Fast 3G) |
-| INP | ≤ 200 ms |
-| Gamma request timeout / retry | 10 s, 1 retry (`http.ts`) |
-| AI request timeout | 30 s, no auto-retry beyond the ladder's single temp-0 retry |
-| Search debounce | ~300 ms, ≤1 in-flight request |
+| Budget | Target | Owner |
+|---|---|---|
+| JS bundle (gzip) | ≤ 150 KB (Vue+Pinia ≈ 60 KB + app; **no UI/chart lib** — D7/analysis §3) | widget team |
+| CSS (gzip) | ≤ 20 KB | widget team |
+| Fonts (total, self-hosted WOFF2, subsetted) | ≤ 80 KB | widget team |
+| Per market image | reserved space (width/height or `aspect-ratio`); lazy below fold | widget team |
+| Total transfer (initial route, gzip) | ≤ 250 KB | widget team |
+| LCP | ≤ 2.5 s (Fast 3G) | widget team |
+| INP | ≤ 200 ms | widget team |
+| CLS | ≤ 0.1 | widget team |
+| Gamma request timeout / retry | 10 s, 1 retry (`http.ts`) | — |
+| AI request timeout | 30 s, no auto-retry beyond the ladder's single temp-0 retry | — |
+| Search debounce | ~300 ms, ≤1 in-flight request | — |
+
+> Budgets encoded as **gzip** (brotli only on CF Pro). Enforced by a **`size-limit` CI gate** (fail the build when a budget is exceeded) and regression-guarded by **Lighthouse-CI or web-vitals RUM** for the CWV metrics (T10/PERF-16,18).
 
 | # | Bottleneck | Severity | Mitigation |
 |---|---|---|---|
@@ -116,8 +175,15 @@ Client SPA, no server hot path. Budgets (no constitution exists → derived from
 | P2 | Runtime model discovery (`/models`) latency on first AI call | adds ~1 RTT | cache picked model id in memory for the session; discover once per prediction session |
 | P3 | Default-list render cost | low | cap `limit=20` (AC3.1); proportional bars are CSS `transform`/width, no JS layout; virtualization unnecessary at 20 |
 | P4 | Synchronous `localStorage` read on mount | negligible | small payload; parse once into Pinia |
-| P5 | Web-font FOIT / LCP hit (Rubik / Red Hat Display not bundled) | could delay LCP | `font-display: swap` + `preconnect`; `system-ui` fallback (research DS §2) |
+| P5 | Web-font FOIT / CLS / LCP + supply-chain (Rubik / Red Hat Display) | could delay LCP + font-swap CLS + CDN privacy vector | **self-host** subsetted **WOFF2** with inline `@font-face` (no Google CDN); `font-display: optional` (or `size-adjust`/`ascent-override`/`descent-override` tuned to the `system-ui` fallback) to kill swap CLS; removes the render-blocking cross-origin stylesheet and the `default-src 'self'` vs font-CDN CSP contradiction (T2/PERF-04,05,16, SEC S6) |
 | P6 | N+1 / DB fanout | N/A | no DB; each Gamma call is a single GET |
+| P7 | Market images cause CLS / LCP regressions | layout shift + slow LCP | reserve space with `width`/`height` or `aspect-ratio`; `loading="lazy"` + `decoding="async"` below the fold, eager first/LCP image; `preconnect` to the image host; broken-image fallback; skeletons mirror real card height (T7/PERF-01,02,03, MOBILE M10) |
+
+**Self-hosted fonts (T2):** update `T001` (self-host, no `preconnect`-to-Google), `plan §3 CSP` (`font-src 'self'`), and add the font-byte budget above. Fonts are subsetted to the glyphs actually used.
+
+**Asset caching (T10/PERF-06,07,08):** `dist/_headers` sets `immutable, max-age=31556952` for hashed `/assets/*` and `no-cache` for `index.html` (CF's default `max-age=0, must-revalidate` would defeat Vite hashing).
+
+**Responsive scale-up (T6 → NFR-MF-5):** the layout is **not** a centered phone column on desktop. Concretely, keyed to the DS's 5 breakpoints: base = single-column stack + mobile modal/sheet detail + stacked position rows; **md/lg = two-pane list+detail** (mobile modal → inline right pane) + multi-column card grid + positions as a table; xl/2xl = capped `max-inline-size` (~65–75ch). Bars animate with `transform: scaleX()` (not `width`), gated by `prefers-reduced-motion` (C1). Updates `T602`/`T603`/`T609`.
 
 **No PERF-IMPOSSIBLE.** All mitigations feasible within budget.
 
@@ -146,6 +212,10 @@ Dev/build already present (vite 8.2, vitest 4.1, typescript 6.0, vue-tsc 3.3, @v
 | wrangler | 4.123.0 | CLEAN | Cloudflare deploy (US9, Phase-1 SPA) |
 
 All exist and are CVE-clean, but the skill's safety rail treats *adding* deps as gated. Since the **core widget needs none of these**, this is a **warning**, not a spec-level block — see §9.
+
+**Additional gate/test tooling (also gated at implementation time):** `@vue/test-utils` (present), **`msw`** (network mocking for unit/component tests), **`vitest-axe`** + **`@axe-core/playwright`** (automated a11y), **`size-limit`** (bundle-budget gate), and **`@size-limit/preset-app`** — all for NFR-TEST-3 / T10 / T18. Validate at pickup time.
+
+**Supply-chain merge gate (T19 / SEC S11,S12 / AC9.2):** the full quality gate runs as a **required PR status check** with **branch protection on `main`** (a merge gate, not merely a deploy gate); it includes a blocking `npm audit --audit-level=high`; all GitHub Actions are **SHA-pinned**; deploys use `npm ci` against the committed lockfile; **Dependabot is enabled/required**.
 
 ---
 
