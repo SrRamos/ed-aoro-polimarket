@@ -1,17 +1,21 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import SJErrorBoundary from './components/ui/SJErrorBoundary.vue'
+</script>
 
 <template>
   <a class="skip-link" href="#main">Skip to content</a>
-  <div class="app-shell">
-    <header class="app-shell__header">
-      <h1 class="app-shell__title">Polymarket Widget</h1>
-    </header>
-    <main id="main" class="app-shell__main">
-      <p class="app-shell__lede">
-        Scaffold ready. Build widgets here using the RamosLabs design system.
-      </p>
-    </main>
-  </div>
+  <SJErrorBoundary>
+    <div class="app-shell">
+      <header class="app-shell__header">
+        <h1 class="app-shell__title">Polymarket Widget</h1>
+      </header>
+      <main id="main" class="app-shell__main">
+        <p class="app-shell__lede">
+          Scaffold ready. Build widgets here using the RamosLabs design system.
+        </p>
+      </main>
+    </div>
+  </SJErrorBoundary>
 </template>
 
 <style scoped>

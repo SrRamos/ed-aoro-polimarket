@@ -5,6 +5,8 @@
 > [`research-polymarket-api.md`](./research-polymarket-api.md) ·
 > [`research-openrouter-ai.md`](./research-openrouter-ai.md) ·
 > [`research-ramoslabs-ds.md`](./research-ramoslabs-ds.md)
+>
+> **Auditoría externa multi-lente:** las remediaciones pre-código (headers CSP core-gated, validación de payload completo, guardas de finitud en bet math, scale-up responsive, taxonomía de errores, etc.) están en [`spec-audit-external.md`](./spec-audit-external.md) y ya reflejadas en `specs/polymarket-widget/{spec,plan,tasks}.md`. Este doc queda reconciliado con esa auditoría (ver notas en §4/§5 y D3).
 
 ## 1. Objetivo
 
@@ -16,18 +18,19 @@ Widget de Polymarket en una sola página (Vue 3) que permite: **buscar mercados*
 |---|---|---|
 | D1 | **Datos de mercado y búsqueda: REALES** vía Gamma API (público, sin auth, CORS `*`) | No requiere key, browser-friendly, sin geoblock en reads |
 | D2 | **Apuesta: SIMULADA (mock)** tras interfaz `BettingService` | Órdenes reales exigen wallet + EIP-712 + HMAC secret + USDC + backend, y trading está geobloqueado. Inviable/inseguro solo-browser en 48h. Interfaz swappable deja el path real como extensión futura |
-| D3 | **Precio en vivo: CLOB `/price` opcional**; snapshot de Gamma basta para MVP | Menos llamadas, más simple; se puede enriquecer |
+| D3 | **Precio en vivo: CLOB `/price` DIFERIDO** (no en MVP); snapshot de Gamma (`outcomePrices`) es la fuente de precio | Menos llamadas, más simple; enhancement futuro (spec §6, out of scope). `getLivePrice` / `connect-src https://clob.polymarket.com` solo si se habilita |
 | D4 | **IA: OpenRouter, modelo free, opt-in** con key provista por el usuario en Settings (`localStorage`) | La feature es bonus/opcional; evita exponer key propia; disclaimer + mención de proxy como camino de producción |
 | D5 | **Modelo IA con discovery en runtime** + fallback chain (`z-ai/glm-5.2:free` → nemotron → gpt-oss) | El roster `:free` cambia semanalmente; hardcodear un ID se rompe |
 | D6 | **Tema claro únicamente** | El DS v0.1.0 no shippea dark mode; no inventar paleta dark |
 | D7 | **Componentes propios token-only**, naming `SJ`/`W` | El DS no shippea componentes; regla token-only estricta |
 | D8 | **Los custom components DEBEN seguir TODOS los lineamientos del DS** (no solo tokens): estados press-first, foco visible `--shadow-focus`, native-first, `<label>` persistente, radius/shadow/motion por rol, accesibilidad AA, patrones documentados (Interactive/Form Elements/Modals) | Instrucción explícita del usuario: "ramoslabs-ds me refiero a todo, incluso los custom components deben seguir sus lineamientos" |
 | D9 | **Mobile-first bajo los lineamientos del DS**: base = 0 (móvil), 5 breakpoints `min-width` del DS, thumb-zone, touch ≥24×24 (aim 44), inputs ≥16px, patrón "Mobile First" del DS como fuente primaria | Instrucción explícita del usuario: "debe ser mobile first con las mismas condiciones" (= condiciones del DS) |
+| D10 | **Deployment: Cloudflare Workers with Static Assets** (un solo Worker sirve la SPA y puede alojar rutas `/api/*` con env vars/secrets), **no Pages**. Config por env vars (`VITE_*` público vs Worker secrets server-side), switch simulación→real por env (`VITE_BET_MODE=mock\|real`, `VITE_AI_MODE=user-key\|proxy`), **auto-deploy en merge a `main`** vía GitHub Actions + `wrangler deploy`. Ver [`deployment-cloudflare.md`](./deployment-cloudflare.md) | Confirmado contra docs oficiales de Cloudflare (Ago 2026): Workers Static Assets soporta SPA (`not_found_handling: single-page-application`) + `/api/*` en el mismo deploy (`run_worker_first`) con secrets server-side; permite empezar estático hoy y añadir el proxy de OpenRouter (oculta la key) y un adaptador CLOB real mañana **sin cambiar de plataforma**. Assets estáticos gratis; Workers es la plataforma full-stack recomendada por Cloudflare |
 
 ## 3. Stack
 
 - **Vue 3** (`<script setup>`, Composition API) + **Vite**.
-- **TypeScript** (recomendado — contratos claros para services y modelos; el reviewer lo valora). *Confirmar con el usuario si prefiere JS.*
+- **TypeScript** (recomendado — contratos claros para services y modelos; el reviewer lo valora). Confirmado en §9.
 - **Pinia** para estado (mercados, selección, posiciones/apuestas, settings IA).
 - **@ramoslabs/tokens** para todo el styling (CSS vars).
 - **Vitest** + **@vue/test-utils** para unit; **Playwright** opcional para 1 flujo E2E.
@@ -41,7 +44,7 @@ src/
   App.vue                      # layout de la página única
   services/
     http.ts                    # wrapper fetch: base URL, timeout, errores, retry
-    polymarket.service.ts      # searchMarkets, getMarket, getMarkets, getLivePrice
+    polymarket.service.ts      # searchMarkets, getMarket, getMarkets  (getLivePrice / CLOB `/price` is DEFERRED — not built in MVP, see D3 / spec §6)
     betting.service.ts         # interface BettingService + MockBettingService
     openrouter.service.ts      # pickFreeModel, predict(market, apiKey) + parseo robusto
   models/
@@ -65,13 +68,15 @@ src/
 
 ## 5. Capa de servicios (contratos)
 
-**`polymarket.service.ts`** — normaliza el gotcha de arrays string:
+**`polymarket.service.ts`** — normaliza el gotcha de arrays string. **Nota de reconciliación (audit T8/C11, AC1.4/1.5):** el snippet ilustrativo abajo NO es el contrato final. `normalizeMarket(raw: unknown)` **valida por schema el payload completo + el envelope** de respuesta (no solo los 3 arrays), **clampa** cada precio a `[0,1]` marcando `pricingReliable=false` cuando estaba fuera de rango/`NaN`, y **retorna `null`** (el caller excluye) ante campo faltante / JSON inválido / longitudes desiguales — nunca lanza, nunca renderiza `NaN`.
 ```ts
-function normalizeMarket(raw): Market {
+// ILUSTRATIVO (no-clamping) — el contrato real valida+clampa, ver arriba y plan §2:
+function normalizeMarket(raw): Market | null {
+  // 1) schema-validate whole object + envelope; on failure -> return null
   return {
     id: raw.id, question: raw.question, slug: raw.slug,
     outcomes: JSON.parse(raw.outcomes),
-    prices: JSON.parse(raw.outcomePrices).map(Number),
+    prices: JSON.parse(raw.outcomePrices).map(Number), // -> clamp to [0,1], set pricingReliable
     tokenIds: JSON.parse(raw.clobTokenIds),
     volume: raw.volumeNum, liquidity: raw.liquidityNum,
     endDate: raw.endDate, image: raw.image,
@@ -84,10 +89,14 @@ function normalizeMarket(raw): Market {
 **`betting.service.ts`** — mock con misma firma que el real:
 ```ts
 interface BettingService { placeBet(o: BetOrder): Promise<BetReceipt> }
+// BetOrder lleva un solo campo `price` (snapshot). Un futuro ClobBettingService lo mapea al
+// `priceLimit` marketable de la orden — seam documentado, sin drift (audit C11).
 class MockBettingService implements BettingService {
-  // valida size>0 y precio, cost = size*price, shares = size/price (o size @ payout $1),
+  // valida size>0; RECHAZA si price<=0 || !Number.isFinite(price) (audit T3/S5),
+  // cost = size*price, shares = size/price, payout = shares*$1; asserta Number.isFinite en cost/shares/payout,
+  // avgPrice = prices[i] (precio snapshot del outcome seleccionado — cierra D005),
   // delay simulado, retorna { status:'filled', avgPrice, shares, cost, txHash:'mock-0x…' },
-  // persiste Position en bets.store (localStorage)
+  // persiste Position en bets.store (localStorage) con validación por-item + manejo de QuotaExceededError
 }
 ```
 
@@ -132,3 +141,12 @@ Todos los estados (loading/empty/error) explícitos y con tokens del DS. Accesib
 - **Lenguaje: TypeScript.** Contratos tipados para services/modelos.
 - **Precios: snapshot de Gamma (`outcomePrices`) en el MVP.** CLOB `/price` en vivo queda como enhancement posterior.
 - **Testing: unit (Vitest) + 1 E2E (Playwright)** del flujo buscar → apostar.
+
+## 10. Deployment (Cloudflare) — D10
+
+Plataforma confirmada: **Cloudflare Workers with Static Assets** (no Pages). Un solo Worker + un `wrangler.jsonc` sirve la SPA de Vite hoy (`assets.directory` + `not_found_handling: "single-page-application"`) y puede alojar rutas `/api/*` mañana (`assets.run_worker_first: ["/api/*"]`) — sin cambiar de plataforma. Detalle completo en [`deployment-cloudflare.md`](./deployment-cloudflare.md).
+
+- **Env vars / secrets:** split estricto — `VITE_*` es **config pública** (se inlinea en el bundle) vs **Worker secrets** server-side (`wrangler secret put`, nunca en el bundle). Ninguna API key va en `VITE_*`.
+- **Switch simulación → real (env-driven):** `VITE_BET_MODE=mock|real` elige `MockBettingService` vs un futuro `ClobBettingService` (rutea a `/api/bet`); `VITE_AI_MODE=user-key|proxy` reconcilia el demo (key del usuario en Settings, browser→OpenRouter) con prod (proxy `/api/ai/predict`, key server-side oculta).
+- **Deploy on merge to `main`:** GitHub Actions corre el gate completo (lint+format, Vitest, 1 E2E Playwright) → build Vite → `wrangler deploy`. Rollback vía `wrangler rollback`/versions o git revert. Secrets requeridos: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (GitHub); `OPENROUTER_API_KEY` y creds CLOB (Worker, sólo en Fase 2).
+- **Scope:** bonus/infra — no bloquea el widget core, que corre en local con `mock` + key de usuario.
