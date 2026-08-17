@@ -15,6 +15,8 @@ interface ImportMetaEnv {
   readonly VITE_BET_MODE?: string
   /** AI request path: `user-key` (default) | `proxy`. */
   readonly VITE_AI_MODE?: string
+  /** Opt-in demo/mock data mode: `"true"` serves local fixtures. Default `false`. */
+  readonly VITE_USE_MOCK_DATA?: string
 }
 
 interface ImportMeta {

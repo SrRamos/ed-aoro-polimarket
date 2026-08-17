@@ -168,6 +168,10 @@ export async function searchMarkets(
   query: string,
   signal?: AbortSignal,
 ): Promise<Result<Market[], AppError>> {
+  if (config.useMockData) {
+    const { mockSearchMarkets } = await import('./mock/mock.adapter')
+    return mockSearchMarkets(query, SEARCH_LIMIT)
+  }
   const params = new URLSearchParams({
     q: query,
     limit: String(SEARCH_LIMIT),
@@ -195,6 +199,10 @@ export async function getMarkets(
   filters: MarketFilters = {},
   signal?: AbortSignal,
 ): Promise<Result<Market[], AppError>> {
+  if (config.useMockData) {
+    const { mockGetMarkets } = await import('./mock/mock.adapter')
+    return mockGetMarkets(filters.limit ?? BROWSE_LIMIT)
+  }
   const params = new URLSearchParams({
     closed: 'false',
     active: 'true',
@@ -221,6 +229,10 @@ export async function getMarket(
   slug: string,
   signal?: AbortSignal,
 ): Promise<Result<Market | null, AppError>> {
+  if (config.useMockData) {
+    const { mockGetMarket } = await import('./mock/mock.adapter')
+    return mockGetMarket(slug)
+  }
   const res = await httpRequestJson(`/markets/slug/${encodeURIComponent(slug)}`, {
     baseUrl: config.gammaBaseUrl,
     ...(signal ? { signal } : {}),

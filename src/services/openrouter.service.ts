@@ -286,6 +286,10 @@ export async function predict(
   market: Market,
   apiKey: string,
 ): Promise<Result<AiPrediction, AppError>> {
+  if (config.useMockData) {
+    const { mockPredict } = await import('./mock/mock.adapter')
+    return mockPredict(market)
+  }
   if (!apiKey) return err(appError('no-key'))
 
   const picked = await pickFreeModel(apiKey)
