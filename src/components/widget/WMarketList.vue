@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
- * WMarketList (T602 · AC3.1–AC3.5, NFR-MF-5, T7, C3, C5, C14) — renders a
- * `RequestState<Market[]>` as a responsive card grid.
+ * WMarketList (T602 · AC3.1–AC3.5, NFR-MF-5 [D11], T7, C3, C5, C14) — renders a
+ * `RequestState<Market[]>` as a compact SINGLE-COLUMN list inside the bounded
+ * widget body (D11: the widget is a fixed-width card, never a multi-column page).
  *
- * - Grid: one column on mobile (base), two at `md` (769px), three at `lg`
- *   (992px) — the DS breakpoints, mobile-first (`min-width` only, no
- *   desktop-first). Cards stretch to a uniform height so rows stay tidy.
+ * - Single column at every size — the widget shell caps the inline-size and owns
+ *   the scroll (`overflow-y:auto` on the body region), so the list stays a plain
+ *   vertical stack of cards/rows. No multi-column grid (superseded by D11).
  * - `v-for` is keyed on `market.id` (C3) so Vue patches rather than re-mounts.
  * - Loading renders skeleton cards whose boxes mirror a real card (reserved
  *   image `aspect-ratio` + text lines) → no CLS when the data swaps in (T7).
@@ -104,10 +105,10 @@ const skeletons = computed(() => Array.from({ length: props.skeletonCount }, (_,
 
 <style scoped>
 .w-market-list {
-  /* Mobile-first: single column; scale up at the DS breakpoints. */
+  /* Compact single-column stack inside the bounded widget body (D11). */
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--space-4);
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -142,21 +143,6 @@ const skeletons = computed(() => Array.from({ length: props.skeletonCount }, (_,
 .w-market-list__more {
   display: flex;
   justify-content: center;
-  margin-top: var(--space-6);
-}
-
-/* md: two columns. */
-@media (min-width: 769px) {
-  .w-market-list {
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-6);
-  }
-}
-
-/* lg: three columns. */
-@media (min-width: 992px) {
-  .w-market-list {
-    grid-template-columns: repeat(3, 1fr);
-  }
+  margin-top: var(--space-4);
 }
 </style>

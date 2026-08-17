@@ -1,194 +1,98 @@
 <script setup lang="ts">
 /**
- * App.vue (T609 · NFR-MF-1/NFR-MF-5 · NFR-A11Y-6/NFR-A11Y-7 · spec §7.3) — the
- * single-page composition that assembles the widget from the `SJ*` primitives and
- * `W*` widgets. It owns three things and delegates everything else:
+ * App.vue (D11 · docs/widget-form-factor.md) — a minimal demo HOST page that embeds
+ * the compact `PolymarketWidget`, so the deliverable visibly reads as "a widget on a
+ * page" rather than a full-bleed markets index.
  *
- *   1. LANDMARKS + HEADING OUTLINE (NFR-A11Y-7): a `<header>` (banner) with the one
- *      `h1` + a Settings entry, a `<main id="main">` skip-link target, a `search`
- *      landmark (WMarketSearch's inner form), and labelled `region`s (Markets,
- *      detail pane, Positions) — each `h2` section under the single `h1`.
- *   2. RESPONSIVE MATRIX (NFR-MF-5): base = single-column stack, detail as a mobile
- *      sheet; md (769) = capped inline-size + multi-column card grid; lg (992) =
- *      two-pane list+detail (the sheet becomes an inline right pane) + positions
- *      table. The breakpoint decision is made here (matchMedia) and passed down as
- *      `inline`, so WMarketDetail never guesses the viewport.
- *   3. DATA FLOW (§7.3): `useMarketSearch` → `markets.setSearchState` (store is the
- *      single source of truth) → WMarketList `select` → `markets.selectMarket` →
- *      WMarketDetail; outcome selection round-trips through the store (AC4.3);
- *      WPositions `browse` focuses the search; WAiPrediction `open-settings` opens
- *      WSettings. `SJToastHost` is mounted once; the corrupt-storage notice
- *      (WPositions) stays distinct from onboarding; the whole tree stays under the
- *      `SJErrorBoundary` so one bad panel degrades instead of white-screening.
+ * The host is deliberately thin — it exists only to PROVE embeddability:
+ *   - A faux site banner (brand + nav placeholders) and a hero, in muted DS tokens.
+ *   - A content column with a couple of placeholder blocks, with the widget embedded
+ *     alongside them (an aside on wide viewports, stacked on mobile — the HOST is what
+ *     is responsive; the widget itself is a fixed, bounded card, per D11).
  *
- * Injectables (`searchController` / `bettingService` / `aiController` / `wide`) let
- * the integration tests drive the assembled flow with no live network.
+ * It owns only the host chrome + the app-wide plumbing every page needs:
+ *   - `SJErrorBoundary` at the root so one bad panel degrades instead of white-screening.
+ *   - `SJToastHost` mounted ONCE near the root (NFR-A11Y-3).
+ *   - a skip-link targeting the real `<main>` (NFR-A11Y-7).
+ *
+ * The widget's own logic (search/select/detail/bet/positions/settings) lives inside
+ * `PolymarketWidget`; the injectable controllers are forwarded through so the App
+ * integration tests can drive the assembled flow with no live network.
  */
-import { computed, onMounted, onBeforeUnmount, ref, watch, useTemplateRef } from 'vue'
-import { storeToRefs } from 'pinia'
-import type { Market } from './models/market'
 import type { BettingService } from './services/betting.service'
-import { useMarketSearch, type UseMarketSearch } from './composables/useMarketSearch'
-import { useAiPrediction, type UseAiPrediction } from './composables/useAiPrediction'
-import { useMarketsStore } from './stores/markets.store'
+import type { UseMarketSearch } from './composables/useMarketSearch'
+import type { UseAiPrediction } from './composables/useAiPrediction'
 import SJErrorBoundary from './components/ui/SJErrorBoundary.vue'
-import SJButton from './components/ui/SJButton.vue'
-import SJModal from './components/ui/SJModal.vue'
 import SJToastHost from './components/ui/SJToastHost.vue'
-import WMarketSearch from './components/widget/WMarketSearch.vue'
-import WMarketDetail from './components/widget/WMarketDetail.vue'
-import WPositions from './components/widget/WPositions.vue'
-import WSettings from './components/widget/WSettings.vue'
+import PolymarketWidget from './components/widget/PolymarketWidget.vue'
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
-    /** Inject a search controller (tests) — otherwise a live one is created. */
+    /** Forwarded to the widget (tests) — otherwise the widget builds live ones. */
     searchController?: UseMarketSearch
-    /** Inject a betting service (tests) — forwarded to the bet form. */
     bettingService?: BettingService
-    /** Inject an AI controller (tests) — forwarded to the AI panel. */
     aiController?: UseAiPrediction
-    /**
-     * Force the two-pane (`lg`) layout on/off (tests). Auto via matchMedia otherwise.
-     *
-     * MUST default to `undefined` (not the Boolean-cast `false`): `isWide` falls
-     * through to `autoWide` via `??` only for a nullish override, so an absent prop
-     * has to stay `undefined` — otherwise Vue's Boolean-prop casting would coerce it
-     * to `false` and pin the app to modal-mode even at ≥992px (the NFR-MF-5 bug).
-     */
-    wide?: boolean
   }>(),
   {
     searchController: undefined,
     bettingService: undefined,
     aiController: undefined,
-    wide: undefined,
   },
 )
-
-const markets = useMarketsStore()
-const { selectedMarket, selectedOutcomeIndex } = storeToRefs(markets)
-
-// Search orchestration → push settled state into the store (single source of truth).
-const search = props.searchController ?? useMarketSearch()
-watch(search.state, (state) => markets.setSearchState(state), { immediate: true })
-
-// Provide a shared AI controller so the detail reuses one instance across renders.
-const ai = props.aiController ?? useAiPrediction()
-
-// --- Responsive mode (NFR-MF-5): two-pane at lg (992px) --------------------------
-const autoWide = ref(false)
-const isWide = computed(() => props.wide ?? autoWide.value)
-
-let mql: MediaQueryList | null = null
-function onMediaChange(e: MediaQueryListEvent | MediaQueryList): void {
-  autoWide.value = e.matches
-}
-onMounted(() => {
-  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
-    mql = window.matchMedia('(min-width: 992px)')
-    onMediaChange(mql)
-    mql.addEventListener('change', onMediaChange)
-  }
-})
-onBeforeUnmount(() => mql?.removeEventListener('change', onMediaChange))
-
-// --- Selection -------------------------------------------------------------------
-function onSelectMarket(market: Market): void {
-  markets.selectMarket(market)
-}
-
-/** Modal is used only on narrow layouts; on lg the detail is an inline pane. */
-const detailModalOpen = computed<boolean>({
-  get: () => !isWide.value && selectedMarket.value !== null,
-  set: (v) => {
-    if (!v) markets.clearSelection()
-  },
-})
-
-/** Outcome selection round-trips through the store seam (AC4.3). */
-const outcomeIndex = computed<number | null>({
-  get: () => selectedOutcomeIndex.value,
-  set: (v) => {
-    if (v === null) markets.selectedOutcomeIndex = null
-    else markets.selectOutcome(v)
-  },
-})
-
-function onDetailClose(): void {
-  markets.clearSelection()
-}
-
-// --- Settings --------------------------------------------------------------------
-const settingsOpen = ref(false)
-function openSettings(): void {
-  settingsOpen.value = true
-}
-
-// --- WPositions "browse" → focus the search input (§7.3) -------------------------
-const listPane = useTemplateRef<HTMLElement>('listPane')
-function focusSearch(): void {
-  const input = listPane.value?.querySelector('input')
-  if (input) {
-    input.focus()
-    input.scrollIntoView({ block: 'center' })
-  }
-}
 </script>
 
 <template>
   <a class="skip-link" href="#main">Skip to content</a>
   <SJErrorBoundary>
-    <div class="app">
-      <div class="app__inner">
-        <header class="app__header">
-          <div class="app__brand">
-            <h1 class="app__title">Polymarket Widget</h1>
-            <p class="app__tagline">Explore prediction markets and place simulated bets.</p>
-          </div>
-          <SJButton variant="secondary" icon-only aria-label="Open settings" @click="openSettings">
-            <span aria-hidden="true">⚙</span>
-          </SJButton>
-        </header>
+    <div class="host">
+      <!-- Faux site chrome — muted placeholders, just enough to frame the widget. -->
+      <header class="host__banner">
+        <div class="host__banner-inner">
+          <span class="host__brand">
+            <span class="host__brand-mark" aria-hidden="true">◆</span>
+            <span class="host__brand-name">Acme Insights</span>
+          </span>
+          <nav class="host__nav" aria-label="Demo site">
+            <span class="host__nav-item host__nav-item--active">Home</span>
+            <span class="host__nav-item">Research</span>
+            <span class="host__nav-item">About</span>
+          </nav>
+        </div>
+      </header>
 
-        <main id="main" class="app__main">
-          <!-- Persistent "bets are simulated" framing (US5). -->
-          <p class="app__sim-banner" role="note">
-            <span aria-hidden="true">ⓘ</span> Bets here are <strong>simulated</strong> — no real
-            funds are ever involved.
+      <main id="main" class="host__main">
+        <div class="host__hero">
+          <h1 class="host__hero-title">Prediction markets, embedded.</h1>
+          <p class="host__hero-lead">
+            A demo host page. The interactive card on the right is the self-contained Polymarket
+            widget — drop it into any page.
           </p>
+        </div>
 
-          <section class="app__markets" aria-labelledby="app-markets-heading">
-            <h2 id="app-markets-heading" class="app__section-title">Markets</h2>
-            <div class="app__markets-grid">
-              <div ref="listPane" class="app__list-pane">
-                <WMarketSearch :controller="search" @select="onSelectMarket" />
-              </div>
-              <!-- Detail: inline right pane at lg; a modal/sheet below lg. -->
-              <div class="app__detail-pane">
-                <WMarketDetail
-                  v-model:open="detailModalOpen"
-                  v-model:outcome-index="outcomeIndex"
-                  :market="selectedMarket"
-                  :inline="isWide"
-                  :betting-service="bettingService"
-                  :ai-controller="ai"
-                  @close="onDetailClose"
-                  @open-settings="openSettings"
-                />
-              </div>
-            </div>
-          </section>
+        <div class="host__content">
+          <!-- Placeholder host content blocks (decorative, muted DS tokens). -->
+          <div class="host__article" aria-hidden="true">
+            <span class="host__ph host__ph--title"></span>
+            <span class="host__ph host__ph--line"></span>
+            <span class="host__ph host__ph--line"></span>
+            <span class="host__ph host__ph--line host__ph--short"></span>
+            <span class="host__ph host__ph--block"></span>
+            <span class="host__ph host__ph--line"></span>
+            <span class="host__ph host__ph--line"></span>
+            <span class="host__ph host__ph--line host__ph--short"></span>
+          </div>
 
-          <WPositions @browse="focusSearch" />
-        </main>
-      </div>
+          <!-- The embedded widget — the actual product. -->
+          <aside class="host__widget" aria-label="Polymarket widget">
+            <PolymarketWidget
+              :search-controller="searchController"
+              :betting-service="bettingService"
+              :ai-controller="aiController"
+            />
+          </aside>
+        </div>
+      </main>
     </div>
-
-    <!-- Settings dialog (US8) — opened from the header and from the AI panel. -->
-    <SJModal v-model:open="settingsOpen" title="Settings" close-label="Close settings">
-      <WSettings />
-    </SJModal>
 
     <!-- Live-region toast host, mounted once near the root (NFR-A11Y-3). -->
     <SJToastHost />
@@ -196,33 +100,72 @@ function focusSearch(): void {
 </template>
 
 <style scoped>
-.app {
+.host {
   min-height: 100dvh;
-  padding: var(--space-4);
   background: var(--color-background);
 }
 
-.app__inner {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
+.host__banner {
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface);
 }
 
-.app__header {
+.host__banner-inner {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  padding-block: var(--space-2);
+  max-inline-size: 75rem;
+  margin-inline: auto;
+  padding: var(--space-3) var(--space-4);
 }
 
-.app__brand {
+.host__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.host__brand-mark {
+  color: var(--color-primary);
+}
+
+.host__brand-name {
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-heading);
+}
+
+.host__nav {
+  display: none;
+  gap: var(--space-5);
+}
+
+.host__nav-item {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+.host__nav-item--active {
+  color: var(--color-text-strong);
+}
+
+.host__main {
+  max-inline-size: 75rem;
+  margin-inline: auto;
+  padding: var(--space-6) var(--space-4) var(--space-16);
+}
+
+.host__hero {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-3);
+  padding-block: var(--space-6);
 }
 
-.app__title {
+.host__hero-title {
   font-family: var(--font-family-display);
   font-size: var(--font-size-2xl);
   font-weight: var(--font-weight-bold);
@@ -230,90 +173,85 @@ function focusSearch(): void {
   color: var(--color-text-heading);
 }
 
-.app__tagline {
-  max-width: 60ch;
-  font-size: var(--font-size-sm);
-  line-height: var(--leading-normal);
+.host__hero-lead {
+  max-inline-size: 55ch;
+  font-size: var(--font-size-base);
+  line-height: var(--leading-relaxed);
   color: var(--color-text-secondary);
 }
 
-.app__main {
+.host__content {
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: var(--space-8);
 }
 
-.app__sim-banner {
-  max-width: 65ch;
-  padding: var(--space-3) var(--space-4);
-  font-size: var(--font-size-sm);
-  line-height: var(--leading-normal);
-  color: var(--color-info-text);
-  background: var(--color-info-surface);
-  border: 1px solid var(--color-info-border);
-  border-radius: var(--radius-md);
-}
-
-.app__markets {
+/* Decorative placeholder "article" — muted DS surfaces, no real content. */
+.host__article {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-}
-
-.app__section-title {
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text-heading);
-}
-
-.app__markets-grid {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-}
-
-.app__list-pane {
+  gap: var(--space-3);
   min-width: 0;
 }
 
-/* base / md: the detail is a modal (teleported) — the inline pane is not shown. */
-.app__detail-pane {
-  display: none;
+.host__ph {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-secondary);
 }
 
-/* md (769): cap the overall inline-size + center; the card grid goes multi-column
-   inside WMarketList. Text blocks keep their own ch caps above. */
+.host__ph--title {
+  width: 60%;
+  height: var(--space-8);
+  border-radius: var(--radius-md);
+}
+
+.host__ph--line {
+  width: 100%;
+  height: var(--space-4);
+}
+
+.host__ph--short {
+  width: 70%;
+}
+
+.host__ph--block {
+  width: 100%;
+  height: var(--space-24);
+  margin-block: var(--space-2);
+  border-radius: var(--radius-md);
+}
+
+.host__widget {
+  display: flex;
+  justify-content: center;
+}
+
+/* md+: the host lays out two columns with the widget as a sticky aside — the HOST
+   is responsive; the widget stays a fixed, bounded card (D11). */
 @media (min-width: 769px) {
-  .app {
-    padding: var(--space-8);
-  }
-
-  .app__inner {
-    inline-size: 100%;
-    max-inline-size: 140ch;
-    margin-inline: auto;
-  }
-
-  .app__title {
+  .host__hero-title {
     font-size: var(--font-size-3xl);
   }
-}
 
-/* lg (992): two-pane list+detail — the mobile sheet becomes an inline right pane. */
-@media (min-width: 992px) {
-  .app__markets-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 46ch);
-    gap: var(--space-8);
+  .host__nav {
+    display: flex;
+  }
+
+  .host__content {
+    flex-direction: row;
     align-items: start;
   }
 
-  .app__detail-pane {
-    display: block;
+  .host__article {
+    flex: 1;
+  }
+
+  .host__widget {
     position: sticky;
-    /* Clear of the top edge; keeps a focused control visible (NFR-A11Y-6). */
-    top: var(--space-4);
+    top: var(--space-6);
+    justify-content: flex-end;
+    flex-shrink: 0;
   }
 }
 </style>
