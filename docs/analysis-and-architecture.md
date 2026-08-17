@@ -23,6 +23,7 @@ Widget de Polymarket en una sola página (Vue 3) que permite: **buscar mercados*
 | D7 | **Componentes propios token-only**, naming `SJ`/`W` | El DS no shippea componentes; regla token-only estricta |
 | D8 | **Los custom components DEBEN seguir TODOS los lineamientos del DS** (no solo tokens): estados press-first, foco visible `--shadow-focus`, native-first, `<label>` persistente, radius/shadow/motion por rol, accesibilidad AA, patrones documentados (Interactive/Form Elements/Modals) | Instrucción explícita del usuario: "ramoslabs-ds me refiero a todo, incluso los custom components deben seguir sus lineamientos" |
 | D9 | **Mobile-first bajo los lineamientos del DS**: base = 0 (móvil), 5 breakpoints `min-width` del DS, thumb-zone, touch ≥24×24 (aim 44), inputs ≥16px, patrón "Mobile First" del DS como fuente primaria | Instrucción explícita del usuario: "debe ser mobile first con las mismas condiciones" (= condiciones del DS) |
+| D10 | **Deployment: Cloudflare Workers with Static Assets** (un solo Worker sirve la SPA y puede alojar rutas `/api/*` con env vars/secrets), **no Pages**. Config por env vars (`VITE_*` público vs Worker secrets server-side), switch simulación→real por env (`VITE_BET_MODE=mock\|real`, `VITE_AI_MODE=user-key\|proxy`), **auto-deploy en merge a `main`** vía GitHub Actions + `wrangler deploy`. Ver [`deployment-cloudflare.md`](./deployment-cloudflare.md) | Confirmado contra docs oficiales de Cloudflare (Ago 2026): Workers Static Assets soporta SPA (`not_found_handling: single-page-application`) + `/api/*` en el mismo deploy (`run_worker_first`) con secrets server-side; permite empezar estático hoy y añadir el proxy de OpenRouter (oculta la key) y un adaptador CLOB real mañana **sin cambiar de plataforma**. Assets estáticos gratis; Workers es la plataforma full-stack recomendada por Cloudflare |
 
 ## 3. Stack
 
@@ -132,3 +133,12 @@ Todos los estados (loading/empty/error) explícitos y con tokens del DS. Accesib
 - **Lenguaje: TypeScript.** Contratos tipados para services/modelos.
 - **Precios: snapshot de Gamma (`outcomePrices`) en el MVP.** CLOB `/price` en vivo queda como enhancement posterior.
 - **Testing: unit (Vitest) + 1 E2E (Playwright)** del flujo buscar → apostar.
+
+## 10. Deployment (Cloudflare) — D10
+
+Plataforma confirmada: **Cloudflare Workers with Static Assets** (no Pages). Un solo Worker + un `wrangler.jsonc` sirve la SPA de Vite hoy (`assets.directory` + `not_found_handling: "single-page-application"`) y puede alojar rutas `/api/*` mañana (`assets.run_worker_first: ["/api/*"]`) — sin cambiar de plataforma. Detalle completo en [`deployment-cloudflare.md`](./deployment-cloudflare.md).
+
+- **Env vars / secrets:** split estricto — `VITE_*` es **config pública** (se inlinea en el bundle) vs **Worker secrets** server-side (`wrangler secret put`, nunca en el bundle). Ninguna API key va en `VITE_*`.
+- **Switch simulación → real (env-driven):** `VITE_BET_MODE=mock|real` elige `MockBettingService` vs un futuro `ClobBettingService` (rutea a `/api/bet`); `VITE_AI_MODE=user-key|proxy` reconcilia el demo (key del usuario en Settings, browser→OpenRouter) con prod (proxy `/api/ai/predict`, key server-side oculta).
+- **Deploy on merge to `main`:** GitHub Actions corre el gate completo (lint+format, Vitest, 1 E2E Playwright) → build Vite → `wrangler deploy`. Rollback vía `wrangler rollback`/versions o git revert. Secrets requeridos: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (GitHub); `OPENROUTER_API_KEY` y creds CLOB (Worker, sólo en Fase 2).
+- **Scope:** bonus/infra — no bloquea el widget core, que corre en local con `mock` + key de usuario.

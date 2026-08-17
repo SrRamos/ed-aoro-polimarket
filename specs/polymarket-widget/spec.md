@@ -28,7 +28,8 @@ Everything lives on **one page** (`App.vue`) with a vertical, mobile-first layou
 | D6 | **Light theme only.** The DS ships no dark mode; no dark tokens are invented. |
 | D7–D8 | **Custom components only**, `SJ`/`W` naming, **token-only**, and they MUST follow **all** DS guidelines (not just tokens). |
 | D9 | **Mobile-first under the DS's own conditions**: base = 0, five `min-width` breakpoints, thumb-zone ergonomics, touch ≥24×24 (aim 44×44), inputs ≥16px. |
-| Stack | Vue 3 (`<script setup>`, Composition API) + Vite + **TypeScript** + Pinia + `@ramoslabs/tokens`. Testing: **Vitest unit + 1 Playwright E2E** (search → bet). |
+| D10 | **Deployment: Cloudflare Workers with Static Assets** (single Worker serves the SPA and can host `/api/*` routes with env vars/secrets), not Pages. Env-driven config, simulation→real switch by env var, auto-deploy on merge to `main`. See [`docs/deployment-cloudflare.md`](../../docs/deployment-cloudflare.md). |
+| Stack | Vue 3 (`<script setup>`, Composition API) + Vite + **TypeScript** + Pinia + `@ramoslabs/tokens`. Testing: **Vitest unit + 1 Playwright E2E** (search → bet). Hosting: Cloudflare Workers Static Assets. |
 
 ### 1.4 Glossary
 
@@ -63,6 +64,9 @@ Everything lives on **one page** (`App.vue`) with a vertical, mobile-first layou
 
 ### Capability G — Settings (AI key)
 - **US8** — As a user, I want to enter and manage my OpenRouter API key in Settings, so the optional AI feature can be enabled or disabled by me.
+
+### Capability H — Deployment / Ops (bonus, infra)
+- **US9** — As an operator, I want the widget to deploy to Cloudflare automatically on merge to `main`, driven by environment variables (including an env-driven simulation→real switch) with no client-exposed secrets, so the app is hosted and can later switch from simulation-only to "something real" by configuration.
 
 ---
 
@@ -290,6 +294,42 @@ WHILE the Settings form is shown, THE SYSTEM SHALL use a persistent visible `<la
 
 ---
 
+### US9 — Deployment / Ops (bonus, infra)
+
+<a id="ac9-1"></a>
+**AC9.1** (Event-driven, deploy on merge)
+WHEN a change is merged to the `main` branch, THE SYSTEM SHALL build the production bundle and deploy it to the hosting platform automatically, without a manual deploy step.
+
+<a id="ac9-2"></a>
+**AC9.2** (State-driven, gate before deploy)
+WHILE the deploy pipeline runs, THE SYSTEM SHALL execute the full quality gate (lint, format check, unit tests, and the E2E test) before deploying, and SHALL proceed to deploy only if the gate passes.
+
+<a id="ac9-3"></a>
+**AC9.3** (Ubiquitous, env-driven config)
+THE SYSTEM SHALL source runtime configuration from environment variables, including a betting-mode switch (`mock` vs `real`) and an AI-key-sourcing switch (user-supplied key vs server proxy), such that behavior changes by configuration without code edits.
+
+<a id="ac9-4"></a>
+**AC9.4** (Unwanted-behavior, no client-exposed secrets)
+IF a value is a secret (any API key or credential), THEN THE SYSTEM SHALL keep it out of the client bundle and out of version control, exposing it only to server-side code; public build-time config MUST NOT contain any secret.
+
+<a id="ac9-5"></a>
+**AC9.5** (State-driven, default simulation)
+WHILE the betting-mode configuration is unset or set to `mock`, THE SYSTEM SHALL use the simulated betting path (default), and WHILE it is set to `real`, THE SYSTEM SHALL route bets to the server-side adapter.
+
+<a id="ac9-6"></a>
+**AC9.6** (Complex, AI mode reconciliation)
+WHILE the AI-mode configuration is `user-key`, WHEN a prediction is requested, THE SYSTEM SHALL use the user-supplied key from Settings and call the AI provider directly; WHILE it is `proxy`, THE SYSTEM SHALL call a server-side route that injects the key, and the key SHALL NOT be handled by the client.
+
+<a id="ac9-7"></a>
+**AC9.7** (Unwanted-behavior, rollback)
+IF a deployed build is faulty, THEN THE SYSTEM SHALL support reverting to a previous known-good deployed version without requiring a source rewrite.
+
+<a id="ac9-8"></a>
+**AC9.8** (Ubiquitous, non-blocking scope)
+THE SYSTEM SHALL keep the deployment/ops capability independent of the core widget, such that the core flows (search → detail → simulated bet → positions, plus opt-in AI) remain fully operable in local development without any deployment configured.
+
+---
+
 ## 4. Acceptance criteria (Given / When / Then summary)
 
 > These restate the testable core of each story in Given/When/Then form; the authoritative, atomic criteria are the EARS ACs in §3.
@@ -302,6 +342,7 @@ WHILE the Settings form is shown, THE SYSTEM SHALL use a persistent visible `<la
 - **US6 — Positions.** Given placed bets, When the page reloads, Then positions restore from `localStorage`; an empty first-run state shows when none exist; corrupt storage recovers to empty (AC6.1–AC6.4).
 - **US7 — AI.** Given a configured key, When the user explicitly requests a suggestion, Then exactly one request runs, the model is discovered at runtime, output is parsed via the ladder and validated (`recommendedOutcome` ∈ outcomes, confidence clamped), rendered with a numeric confidence signal + disclaimer, and failures show retry without surfacing invalid results (AC7.1–AC7.10).
 - **US8 — Settings.** Given the Settings form, When the user saves/clears a key, Then it is persisted/removed in `localStorage`, the AI feature toggles accordingly, the disclaimer shows, no key is ever bundled, and the field follows DS form conventions (AC8.1–AC8.5).
+- **US9 — Deployment / Ops.** Given a merge to `main`, When the pipeline runs, Then the full gate runs before an automatic deploy; env vars drive config including the `mock`/`real` betting switch and `user-key`/`proxy` AI switch; secrets never reach the client bundle or version control; a bad build can be rolled back; and none of this blocks the core widget in local dev (AC9.1–AC9.8).
 
 ---
 
@@ -440,6 +481,7 @@ The following are explicitly **not** built in this feature:
 - **Real-time live CLOB pricing** (`/book`, `/price`, `/prices-history` live quoting and price charts) — deferred enhancement; MVP uses Gamma `outcomePrices` snapshots (D3).
 - **Server-side AI proxy** (Approach C) — documented as the production path but not implemented; the challenge uses the user-supplied-key approach (D4).
 - **Auth/accounts, multi-user, or backend persistence** — state is local (`localStorage` + Pinia).
+- **Phase 2 server routes** — the `/api/*` Worker routes (OpenRouter proxy, real CLOB betting adapter) and the `real` betting path are **designed but not implemented** now; built only on explicit request. Deployment ships the static SPA (Phase 1) with `mock` betting and the user-supplied AI key.
 
 ---
 
@@ -454,6 +496,7 @@ The following are explicitly **not** built in this feature:
 | AC5.*, AC6.* | `betting.service.ts` — `interface BettingService { placeBet(o: BetOrder): Promise<BetReceipt> }`, `MockBettingService`; `models/bet.ts` — `BetOrder`, `BetReceipt`, `Position`; persisted via `stores/bets.store.ts` (localStorage). |
 | AC7.*, AC8.* | `openrouter.service.ts` — `pickFreeModel(apiKey)`, `predict(market, apiKey)` with the parse ladder + validation; `models/prediction.ts` — `AiPrediction { recommendedOutcome, confidence, rationale }`; key in `stores/settings.store.ts`. |
 | NFR-SVC-1, NFR-SVC-2 | `http.ts` — fetch wrapper (base URL, timeout, error normalization, retry); Vite dev proxy as CORS fallback. |
+| AC9.* | **Deployment** — Cloudflare Workers Static Assets (`wrangler.jsonc`: `assets.directory` + `not_found_handling: "single-page-application"`, later `run_worker_first: ["/api/*"]`); GitHub Actions `wrangler deploy` on merge to `main`; env switches `VITE_BET_MODE` (`mock`/`real`) and `VITE_AI_MODE` (`user-key`/`proxy`); Worker secrets via `wrangler secret put`. Full detail in [`docs/deployment-cloudflare.md`](../../docs/deployment-cloudflare.md). |
 
 ### 7.2 Folder architecture (from the analysis doc §4)
 
