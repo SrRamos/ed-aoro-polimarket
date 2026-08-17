@@ -9,5 +9,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     include: ['tests/unit/**/*.{test,spec}.{ts,tsx}', 'src/**/*.{test,spec}.{ts,tsx}'],
+    // Foundation ships no tests yet (they land in later groups) — keep the gate
+    // green rather than failing CI on an empty suite.
+    passWithNoTests: true,
   },
 })
