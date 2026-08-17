@@ -40,16 +40,31 @@ import WMarketDetail from './components/widget/WMarketDetail.vue'
 import WPositions from './components/widget/WPositions.vue'
 import WSettings from './components/widget/WSettings.vue'
 
-const props = defineProps<{
-  /** Inject a search controller (tests) — otherwise a live one is created. */
-  searchController?: UseMarketSearch
-  /** Inject a betting service (tests) — forwarded to the bet form. */
-  bettingService?: BettingService
-  /** Inject an AI controller (tests) — forwarded to the AI panel. */
-  aiController?: UseAiPrediction
-  /** Force the two-pane (`lg`) layout on/off (tests). Auto via matchMedia otherwise. */
-  wide?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    /** Inject a search controller (tests) — otherwise a live one is created. */
+    searchController?: UseMarketSearch
+    /** Inject a betting service (tests) — forwarded to the bet form. */
+    bettingService?: BettingService
+    /** Inject an AI controller (tests) — forwarded to the AI panel. */
+    aiController?: UseAiPrediction
+    /**
+     * Force the two-pane (`lg`) layout on/off (tests). Auto via matchMedia otherwise.
+     *
+     * MUST default to `undefined` (not the Boolean-cast `false`): `isWide` falls
+     * through to `autoWide` via `??` only for a nullish override, so an absent prop
+     * has to stay `undefined` — otherwise Vue's Boolean-prop casting would coerce it
+     * to `false` and pin the app to modal-mode even at ≥992px (the NFR-MF-5 bug).
+     */
+    wide?: boolean
+  }>(),
+  {
+    searchController: undefined,
+    bettingService: undefined,
+    aiController: undefined,
+    wide: undefined,
+  },
+)
 
 const markets = useMarketsStore()
 const { selectedMarket, selectedOutcomeIndex } = storeToRefs(markets)

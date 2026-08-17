@@ -15,7 +15,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ref, computed } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { axe } from 'vitest-axe'
 import WMarketDetail from '../../src/components/widget/WMarketDetail.vue'
 import type { UseAiPrediction } from '../../src/composables/useAiPrediction'
@@ -91,6 +91,20 @@ describe('WMarketDetail', () => {
     const w = mount(WMarketDetail, { props: baseProps({ inline: true, market: null }) })
     expect(w.get('.w-market-detail__placeholder').text()).toContain('Select a market')
     expect(w.find('.w-bet-form').exists()).toBe(false)
+  })
+
+  it('inline mode moves focus to the detail heading when a market becomes selected', async () => {
+    const w = mount(WMarketDetail, {
+      attachTo: document.body,
+      props: baseProps({ inline: true, market: null }),
+    })
+    // Selecting a market (null → a market) hands focus to the region heading.
+    await w.setProps({ market: makeMarket() })
+    await flushPromises()
+    const heading = w.get('.w-market-detail__title')
+    expect(heading.attributes('tabindex')).toBe('-1')
+    expect(document.activeElement).toBe(heading.element)
+    w.unmount()
   })
 
   it('modal mode exposes a dialog labelled by the question with a describedby summary (AC4.7)', () => {

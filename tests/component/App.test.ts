@@ -91,6 +91,43 @@ function mountApp(props: Record<string, unknown> = {}) {
   })
 }
 
+/**
+ * Mount WITHOUT an explicit `wide` prop so the app resolves its layout mode from
+ * `matchMedia` — the real production path. Stubs `window.matchMedia('(min-width:
+ * 992px)')` to `matches`, guarding the NFR-MF-5 regression where Vue's Boolean-prop
+ * casting turned an absent `wide` into `false` and pinned the app to modal-mode.
+ */
+function stubMatchMedia(matches: boolean) {
+  const mql = {
+    matches,
+    media: '(min-width: 992px)',
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(() => false),
+  }
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn(() => mql),
+  )
+  return mql
+}
+
+function mountAppAuto() {
+  return mount(App, {
+    attachTo: document.body,
+    global: { plugins: [pinia] },
+    props: {
+      searchController: makeSearch(),
+      aiController: makeAi(),
+      bettingService: new MockBettingService({ delayMs: 0 }),
+      // No `wide` — layout comes from matchMedia (the production default).
+    },
+  })
+}
+
 beforeEach(() => {
   localStorage.clear()
   pinia = createPinia()
@@ -99,6 +136,7 @@ beforeEach(() => {
 afterEach(() => {
   document.body.replaceChildren()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('App landmarks + heading outline (NFR-A11Y-7)', () => {
@@ -144,6 +182,48 @@ describe('App search → select → detail (NFR-MF-5 mode switch)', () => {
     expect(w.get('.w-market-detail__title').text()).toBe('Will it rain tomorrow?')
     // The inline pane is a region, never a dialog.
     expect(document.querySelector('[role="dialog"]')).toBeNull()
+    // The market list stays visible + usable on the left beside the detail pane.
+    expect(w.find('[role="search"]').exists()).toBe(true)
+    expect(w.findAll('.w-market-card').length).toBeGreaterThan(0)
+  })
+
+  it('selecting a card at lg moves focus to the detail region heading (not trapped)', async () => {
+    const w = mountApp({ wide: true })
+    await w.get('.w-market-card').trigger('click')
+    await flushPromises()
+    // Focus lands on the detail heading — a handoff, not a modal focus trap.
+    expect(document.activeElement).toBe(w.get('.w-market-detail__title').element)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+})
+
+// Production path: no `wide` prop — the mode is decided by matchMedia. These guard
+// the NFR-MF-5 regression (an absent Boolean `wide` was cast to `false`, pinning
+// the app to modal-mode even at ≥992px, leaving an empty two-pane right column).
+describe('App auto responsive mode via matchMedia (NFR-MF-5, no `wide` prop)', () => {
+  it('renders the INLINE two-pane at lg (matchMedia matches) with the list still present', async () => {
+    stubMatchMedia(true)
+    const w = mountAppAuto()
+    await flushPromises()
+    await w.get('.w-market-card').trigger('click')
+    await flushPromises()
+    expect(w.find('.w-market-detail--inline').exists()).toBe(true)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    // The list remains on the left, usable beside the detail.
+    expect(w.find('[role="search"]').exists()).toBe(true)
+    expect(w.findAll('.w-market-card').length).toBeGreaterThan(0)
+  })
+
+  it('renders the MODAL/SHEET (role=dialog) below lg (matchMedia does not match)', async () => {
+    stubMatchMedia(false)
+    const w = mountAppAuto()
+    await flushPromises()
+    await w.get('.w-market-card').trigger('click')
+    await flushPromises()
+    const dialog = document.querySelector('[role="dialog"]')
+    expect(dialog).not.toBeNull()
+    expect(dialog!.textContent).toContain('Will it rain tomorrow?')
+    expect(w.find('.w-market-detail--inline').exists()).toBe(false)
   })
 })
 

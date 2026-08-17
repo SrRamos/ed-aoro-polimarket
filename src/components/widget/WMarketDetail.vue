@@ -16,7 +16,7 @@
  * The app shell (App.vue) owns the breakpoint decision and passes `inline`, so the
  * component never guesses the viewport itself.
  */
-import { computed, useId } from 'vue'
+import { computed, nextTick, useId, useTemplateRef, watch } from 'vue'
 import type { Market } from '../../models/market'
 import type { BetReceipt } from '../../models/bet'
 import type { BettingService } from '../../services/betting.service'
@@ -65,6 +65,20 @@ function onClose(): void {
   open.value = false
   emit('close')
 }
+
+// Inline (lg two-pane) focus handoff: selecting a card moves focus to the detail
+// region heading so keyboard users land in the new content — WITHOUT a focus trap
+// (that belongs to the modal/sheet, owned by SJModal). Fires only in inline mode
+// and only when the selected market actually changes, never on initial mount.
+const headingRef = useTemplateRef<HTMLElement>('headingRef')
+watch(
+  () => props.market?.id,
+  async (id, prev) => {
+    if (!props.inline || !id || id === prev) return
+    await nextTick()
+    headingRef.value?.focus()
+  },
+)
 </script>
 
 <template>
@@ -77,7 +91,11 @@ function onClose(): void {
   >
     <template v-if="market">
       <header class="w-market-detail__head">
-        <h2 :id="titleId" class="w-market-detail__title">{{ market.question }}</h2>
+        <!-- tabindex=-1: programmatically focusable for the card→detail handoff,
+             but kept out of the tab order (not a control). -->
+        <h2 :id="titleId" ref="headingRef" tabindex="-1" class="w-market-detail__title">
+          {{ market.question }}
+        </h2>
       </header>
       <WMarketDetailBody
         v-model:outcome-index="outcomeIndex"
