@@ -24,7 +24,7 @@
   - [ ] `svc: T201.1` — `normalizeMarket(raw)`: `JSON.parse` outcomes/outcomePrices/clobTokenIds → positionally-aligned arrays, prices→number (refs: AC1.1, AC1.2, AC1.3)
   - [ ] `svc: T201.2` — malformed guard: missing/invalid-JSON/unequal-length → return `null`, caller excludes; never throw (refs: AC1.4)
   - [ ] `svc: T201.3` — clamp price to `[0,1]`, set `pricingReliable=false`, never render `NaN` (refs: AC1.5)
-  - [ ] `svc: T201.4` — `searchMarkets(q)` → `/public-search`; `getMarkets()` → `/markets?closed=false&active=true&order=volume&ascending=false&limit=20`; `getMarket(slug)` (refs: AC2.1, AC3.1, AC4.1)
+  - [ ] `svc: T201.4` — `searchMarkets(q)` → `/public-search`; `getMarkets()` → `/markets?closed=false&active=true&order=volume&ascending=false&limit=20`; `getMarket(slug)`; all reads are public unauthenticated GETs (no API key/secret) (refs: AC2.1, AC3.1, AC4.1, NFR-SEC-3)
 - [ ] `svc: T202` — `betting.service.ts`: `interface BettingService` + `MockBettingService` (refs: AC5.1, NFR-SVC-3, D2)
   - [ ] `svc: T202.1` — validate size>0 & price; `cost=size×price`, `shares=size/price`, `payout=shares×$1` (refs: AC5.2, AC5.3)
   - [ ] `svc: T202.2` — simulated delay → receipt `{status:'filled',avgPrice,shares,cost,txHash:'mock-0x…'}`; reject path for failures (refs: AC5.1, AC5.7)
@@ -48,11 +48,11 @@
 
 ## Group 5 — UI primitives `SJ*` (after Group 0; parallel-safe)
 
-- [ ] `ui: T501` — `SJButton`: press-first states `:active→:focus-visible→:hover` (hover gated), tonal `--state-*` overlays, `--shadow-focus`, `--radius-sm`, ≥24×24 (aim 44) (refs: NFR-DS-3, NFR-DS-4, NFR-MF-2)
+- [ ] `ui: T501` — `SJButton`: press-first states `:active→:focus-visible→:hover` (hover gated), tonal `--state-*` overlays, `--shadow-focus`, `--radius-sm`, ≥24×24 (aim 44); indigo `--color-primary` as the only action accent; `SJ*` naming + DS Interactive pattern (refs: NFR-DS-3, NFR-DS-4, NFR-MF-2, NFR-DS-2, NFR-DS-7)
 - [ ] `ui: T502` — `SJInput`: persistent visible `<label>`, native, `:user-invalid`/`:user-valid`, `font-size≥16px`, inline error (refs: NFR-DS-5, NFR-MF-3)
-- [ ] `ui: T503` — `SJCard`: `--color-surface`, `--space-6`, `--radius-lg`, `--shadow-sm` (refs: NFR-DS-8)
+- [ ] `ui: T503` — `SJCard`: `--color-surface`, `--space-6`, `--radius-lg` (card role), `--shadow-sm` (elevation only) (refs: NFR-DS-8, NFR-DS-6)
 - [ ] `ui: T504` — `SJBadge`: `--radius-pill` + semantic triad (`-surface`+`-border`+`-text`) + icon/text (refs: NFR-DS-8, NFR-A11Y-2)
-- [ ] `ui: T505` — `SJModal`: `--radius-xl`, `--shadow-lg`, `--z-modal-backdrop/modal`, focus trap + Escape + focus-return, motion ≤300ms transform/opacity (refs: NFR-DS-8, AC4.4, NFR-A11Y-5, NFR-A11Y-4)
+- [ ] `ui: T505` — `SJModal`: `--radius-xl` (modal role), `--shadow-lg` (elevation only), `--z-modal-backdrop/modal`, focus trap + Escape + focus-return, motion ≤300ms transform/opacity only (refs: NFR-DS-8, AC4.4, NFR-A11Y-5, NFR-A11Y-4, NFR-DS-6)
 - [ ] `ui: T506` — `SJSpinner` + `SJSkeleton` from surface/border tokens, animate opacity/transform, `prefers-reduced-motion` (refs: AC3.3, NFR-A11Y-4)
 - [ ] `ui: T507` — `SJLiveRegion`/toast: `role="status"`/`aria-live="polite"` + `role="alert"`, `--z-toast` (refs: NFR-A11Y-3)
 
@@ -64,9 +64,9 @@
 - [ ] `widget: T604` — `WBetForm`: outcome + numeric amount (≥16px), live cost/payout, `:user-invalid` inline error, no-outcome guard, disabled-until-valid, sticky bottom CTA on mobile (refs: AC5.1–AC5.5, NFR-MF-4)
 - [ ] `widget: T605` — `WBetReceipt`: toast via live region + add position, no reload (refs: AC5.6)
 - [ ] `widget: T606` — `WPositions`: per-position content (question, outcome, size, price, cost, shares, payout); first-run onboarding empty state (refs: AC6.2, AC6.3)
-- [ ] `widget: T607` — `WAiPrediction`: opt-in gate; no-key CTA → Settings; result = recommended outcome + `--color-primary` confidence bar **+ numeric label** + rationale + "not financial advice"; error/retry (refs: AC7.1, AC7.2, AC7.8, AC7.9, NFR-A11Y-2)
+- [ ] `widget: T607` — `WAiPrediction`: opt-in gate; no-key CTA → Settings; result = recommended outcome + `--color-primary` confidence bar (indigo action accent only) **+ numeric label** + rationale + "not financial advice"; error/retry (refs: AC7.1, AC7.2, AC7.8, AC7.9, NFR-A11Y-2, NFR-DS-2)
 - [ ] `widget: T608` — `WSettings`: labelled key field (≥16px), save/clear, "stored locally, sent directly to OpenRouter" disclaimer, **no bundled key** (refs: AC8.1–AC8.5, NFR-SEC-1)
-- [ ] `widget: T609` — `App.vue`: vertical mobile-first layout (base=0 + 5 `min-width` breakpoints), header + Settings entry, compose all widgets per UX map (refs: NFR-MF-1, spec §7.3)
+- [ ] `widget: T609` — `App.vue`: vertical mobile-first layout (base=0 + 5 `min-width` breakpoints), header + Settings entry, compose all `W*` widgets per UX map (SJ*/W* naming + DS patterns, reuse before creating) (refs: NFR-MF-1, spec §7.3, NFR-DS-7)
 
 ## Group 7 — Tests & verification (after Group 6; parallel-safe)
 

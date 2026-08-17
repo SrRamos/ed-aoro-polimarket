@@ -43,7 +43,7 @@ Artifacts written/updated:
 | 8 Observability | fields/metrics/spans/alerts (plan §6). |
 | 9–10 Migration/Rollback | N/A DB; deploy + localStorage rollback documented. |
 | 11 Cost | ≈ $0/month. |
-| 12 Task breakdown | 55 tasks; service epics → subtasks. |
+| 12 Task breakdown | 58 tasks (47 top-level + 11 subtasks); service epics → subtasks. |
 | 13 Dep graph | topological, 7 parallel groups. |
 | 14 Feature flags | 3 flags, default-safe. |
 | 15 Infra detail | wrangler + Actions from deploy doc. |
