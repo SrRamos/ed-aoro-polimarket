@@ -1,17 +1,20 @@
 /**
- * App.vue (T609) — the assembled single-page flows:
- *   - LANDMARKS + HEADING OUTLINE + SKIP-LINK (NFR-A11Y-7): one h1, section h2s, a
- *     header/main/search landmark, and a skip-link targeting the real <main>.
- *   - SEARCH → SELECT → DETAIL (AC4.1/AC4.7 · NFR-MF-5): selecting a card opens the
- *     detail as a MODAL/SHEET on narrow layouts and as an INLINE PANE on wide — the
- *     mode switch is asserted both ways.
+ * App.vue (D11) — the demo HOST page that embeds the compact PolymarketWidget:
+ *   - HOST CHROME + LANDMARKS (NFR-A11Y-7): a faux site banner, a single h1 (the
+ *     host hero), a `<main id="main">` skip-link target, and the embedded widget
+ *     exposing a `search` landmark + its own h2 title.
+ *   - EMBEDDING: the widget renders inside the host `<aside>`, bounded — not a
+ *     full-page markets index.
+ *   - VIEW-STACK (D11): browse → select → detail (an in-widget region, NEVER a
+ *     dialog) → Back → browse; the Positions view is reachable from the nav.
  *   - PLACE A BET (US5): select outcome → review → confirm → receipt → the position
- *     appears in WPositions (persisted through the real bets store).
- *   - AI open-settings (US7/US8): the no-key CTA opens the Settings dialog.
- *   - axe on the full render.
+ *     shows in the Positions view (persisted through the real bets store).
+ *   - SETTINGS is the ONLY dialog (US8): the header gear + the AI no-key CTA open it.
+ *   - axe on the full host+widget render.
  *
- * The search + AI controllers and a zero-delay betting service are injected, and a
- * fresh Pinia + clean localStorage back the stores, so nothing touches the network.
+ * The search + AI controllers and a zero-delay betting service are injected (and
+ * forwarded to the widget), and a fresh Pinia + clean localStorage back the stores,
+ * so nothing touches the network.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ref, computed } from 'vue'
@@ -85,45 +88,7 @@ function mountApp(props: Record<string, unknown> = {}) {
       searchController: makeSearch(),
       aiController: makeAi(),
       bettingService: new MockBettingService({ delayMs: 0 }),
-      wide: false,
       ...props,
-    },
-  })
-}
-
-/**
- * Mount WITHOUT an explicit `wide` prop so the app resolves its layout mode from
- * `matchMedia` — the real production path. Stubs `window.matchMedia('(min-width:
- * 992px)')` to `matches`, guarding the NFR-MF-5 regression where Vue's Boolean-prop
- * casting turned an absent `wide` into `false` and pinned the app to modal-mode.
- */
-function stubMatchMedia(matches: boolean) {
-  const mql = {
-    matches,
-    media: '(min-width: 992px)',
-    onchange: null,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: vi.fn(() => false),
-  }
-  vi.stubGlobal(
-    'matchMedia',
-    vi.fn(() => mql),
-  )
-  return mql
-}
-
-function mountAppAuto() {
-  return mount(App, {
-    attachTo: document.body,
-    global: { plugins: [pinia] },
-    props: {
-      searchController: makeSearch(),
-      aiController: makeAi(),
-      bettingService: new MockBettingService({ delayMs: 0 }),
-      // No `wide` — layout comes from matchMedia (the production default).
     },
   })
 }
@@ -139,98 +104,93 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('App landmarks + heading outline (NFR-A11Y-7)', () => {
+describe('App host chrome + landmarks (NFR-A11Y-7)', () => {
   it('exposes a skip-link to the real <main>, a single h1, header/main/search landmarks', () => {
     const w = mountApp()
     const skip = w.get('a.skip-link')
     expect(skip.attributes('href')).toBe('#main')
     const main = w.get('#main')
     expect(main.element.tagName).toBe('MAIN')
+    // Exactly one h1 — the host hero (the widget title is an h2).
     expect(w.findAll('h1')).toHaveLength(1)
     expect(w.find('header').exists()).toBe(true)
     // The search landmark comes from WMarketSearch's inner role="search" form.
     expect(w.find('[role="search"]').exists()).toBe(true)
-    // Section headings under the single h1.
+    // The widget title is an h2 under the host h1.
     const h2s = w.findAll('h2').map((h) => h.text())
-    expect(h2s).toContain('Markets')
-    expect(h2s).toContain('Your positions')
+    expect(h2s).toContain('Polymarket')
   })
 
-  it('surfaces the persistent "bets are simulated" framing', () => {
+  it('embeds the bounded widget inside the host page (not a full-page index)', () => {
     const w = mountApp()
-    expect(w.text()).toContain('simulated')
+    const aside = w.get('.host__widget')
+    expect(aside.find('.widget').exists()).toBe(true)
+  })
+
+  it('surfaces the persistent "bets are simulated" framing inside the widget', () => {
+    const w = mountApp()
+    expect(w.get('.widget__footer').text()).toContain('simulated')
   })
 })
 
-describe('App search → select → detail (NFR-MF-5 mode switch)', () => {
-  it('opens the detail as a MODAL/SHEET (role=dialog) on a narrow layout', async () => {
-    const w = mountApp({ wide: false })
+describe('App widget view-stack: browse → detail → back (D11)', () => {
+  it('selecting a market opens the detail as an in-widget region, never a dialog', async () => {
+    const w = mountApp()
     await w.get('.w-market-card').trigger('click')
     await flushPromises()
-    const dialog = document.querySelector('[role="dialog"]')
-    expect(dialog).not.toBeNull()
-    expect(dialog!.textContent).toContain('Will it rain tomorrow?')
-    // No inline pane in narrow mode.
-    expect(w.find('.w-market-detail--inline').exists()).toBe(false)
-  })
-
-  it('opens the detail as an INLINE PANE (not a dialog) on a wide layout', async () => {
-    const w = mountApp({ wide: true })
-    await w.get('.w-market-card').trigger('click')
-    await flushPromises()
-    expect(w.find('.w-market-detail--inline').exists()).toBe(true)
+    // Detail is an in-widget region with the question — and NOT a dialog.
+    const detail = w.get('.w-market-detail')
+    expect(detail.element.tagName).toBe('SECTION')
     expect(w.get('.w-market-detail__title').text()).toBe('Will it rain tomorrow?')
-    // The inline pane is a region, never a dialog.
     expect(document.querySelector('[role="dialog"]')).toBeNull()
-    // The market list stays visible + usable on the left beside the detail pane.
+    // The browse search is no longer the active step (detail replaced it).
+    expect(w.find('.w-market-detail__back').exists()).toBe(true)
+  })
+
+  it('moves focus to the detail heading on open (a handoff, not a trap)', async () => {
+    const w = mountApp()
+    await w.get('.w-market-card').trigger('click')
+    await flushPromises()
+    const heading = w.get('.w-market-detail__title')
+    expect(heading.attributes('tabindex')).toBe('-1')
+    expect(document.activeElement).toBe(heading.element)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('Back returns to the browse list', async () => {
+    const w = mountApp()
+    await w.get('.w-market-card').trigger('click')
+    await flushPromises()
+    await w.get('.w-market-detail__back').trigger('click')
+    await flushPromises()
+    // Detail gone; browse search + list back in view.
+    expect(w.find('.w-market-detail').exists()).toBe(false)
     expect(w.find('[role="search"]').exists()).toBe(true)
     expect(w.findAll('.w-market-card').length).toBeGreaterThan(0)
   })
 
-  it('selecting a card at lg moves focus to the detail region heading (not trapped)', async () => {
-    const w = mountApp({ wide: true })
-    await w.get('.w-market-card').trigger('click')
-    await flushPromises()
-    // Focus lands on the detail heading — a handoff, not a modal focus trap.
-    expect(document.activeElement).toBe(w.get('.w-market-detail__title').element)
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  it('renders the compact single-column list inside the scrolling widget body', () => {
+    const w = mountApp()
+    // The list lives inside the bounded, scroll-owning body region.
+    const body = w.get('.widget__body')
+    expect(body.find('.w-market-list').exists()).toBe(true)
   })
 })
 
-// Production path: no `wide` prop — the mode is decided by matchMedia. These guard
-// the NFR-MF-5 regression (an absent Boolean `wide` was cast to `false`, pinning
-// the app to modal-mode even at ≥992px, leaving an empty two-pane right column).
-describe('App auto responsive mode via matchMedia (NFR-MF-5, no `wide` prop)', () => {
-  it('renders the INLINE two-pane at lg (matchMedia matches) with the list still present', async () => {
-    stubMatchMedia(true)
-    const w = mountAppAuto()
+describe('App Positions view (D11)', () => {
+  it('is reachable from the widget nav', async () => {
+    const w = mountApp()
+    const tab = w.findAll('.widget__tab').find((b) => b.text() === 'Positions')!
+    await tab.trigger('click')
     await flushPromises()
-    await w.get('.w-market-card').trigger('click')
-    await flushPromises()
-    expect(w.find('.w-market-detail--inline').exists()).toBe(true)
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
-    // The list remains on the left, usable beside the detail.
-    expect(w.find('[role="search"]').exists()).toBe(true)
-    expect(w.findAll('.w-market-card').length).toBeGreaterThan(0)
-  })
-
-  it('renders the MODAL/SHEET (role=dialog) below lg (matchMedia does not match)', async () => {
-    stubMatchMedia(false)
-    const w = mountAppAuto()
-    await flushPromises()
-    await w.get('.w-market-card').trigger('click')
-    await flushPromises()
-    const dialog = document.querySelector('[role="dialog"]')
-    expect(dialog).not.toBeNull()
-    expect(dialog!.textContent).toContain('Will it rain tomorrow?')
-    expect(w.find('.w-market-detail--inline').exists()).toBe(false)
+    // The positions section (its h2) is now shown; the market list is not.
+    expect(w.findAll('h2').map((h) => h.text())).toContain('Your positions')
   })
 })
 
 describe('App place-a-bet happy path (US5)', () => {
-  it('select outcome → confirm → receipt → the position appears in WPositions', async () => {
-    const w = mountApp({ wide: true })
-    // Open the detail inline.
+  it('select outcome → confirm → receipt → the position appears in Positions', async () => {
+    const w = mountApp()
     await w.get('.w-market-card').trigger('click')
     await flushPromises()
 
@@ -247,32 +207,20 @@ describe('App place-a-bet happy path (US5)', () => {
     await flushPromises()
     expect(w.text()).toContain('Bet filled')
 
-    // WPositions now lists the filled position (real bets store, no reload).
+    // Back to browse, then open the Positions view — the filled position is listed.
+    await w.get('.w-market-detail__back').trigger('click')
+    await flushPromises()
+    const tab = w.findAll('.widget__tab').find((b) => b.text() === 'Positions')!
+    await tab.trigger('click')
+    await flushPromises()
     const table = w.get('.w-positions__table')
     expect(table.text()).toContain('Will it rain tomorrow?')
     expect(table.text()).toContain('Yes')
-    // First-run onboarding is gone now that a position exists.
     expect(w.find('.w-positions__empty').exists()).toBe(false)
   })
 })
 
-describe('App AI open-settings flow (US7/US8)', () => {
-  it('the no-key AI CTA opens the Settings dialog', async () => {
-    const w = mountApp({ wide: true })
-    await w.get('.w-market-card').trigger('click')
-    await flushPromises()
-    // Settings dialog is not open yet.
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
-
-    const openSettings = w.findAll('button').find((b) => b.text() === 'Open Settings')!
-    await openSettings.trigger('click')
-    await flushPromises()
-
-    const dialog = document.querySelector('[role="dialog"]')
-    expect(dialog).not.toBeNull()
-    expect(dialog!.textContent).toContain('OpenRouter API key')
-  })
-
+describe('App Settings dialog (US7/US8)', () => {
   it('the header Settings button opens the Settings dialog', async () => {
     const w = mountApp()
     const settingsBtn = w
@@ -284,10 +232,24 @@ describe('App AI open-settings flow (US7/US8)', () => {
     expect(dialog).not.toBeNull()
     expect(dialog!.textContent).toContain('OpenRouter API key')
   })
+
+  it('the no-key AI CTA opens the Settings dialog from the detail view', async () => {
+    const w = mountApp()
+    await w.get('.w-market-card').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+
+    const openSettings = w.findAll('button').find((b) => b.text() === 'Open Settings')!
+    await openSettings.trigger('click')
+    await flushPromises()
+    const dialog = document.querySelector('[role="dialog"]')
+    expect(dialog).not.toBeNull()
+    expect(dialog!.textContent).toContain('OpenRouter API key')
+  })
 })
 
 describe('App a11y', () => {
-  it('has no axe violations on the full render', async () => {
+  it('has no axe violations on the full host + widget render', async () => {
     const w = mountApp()
     expect(await axe(w.element, axeOpts)).toHaveNoViolations()
     w.unmount()

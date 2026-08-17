@@ -1,6 +1,7 @@
 /**
- * WMarketList (T602) — responsive grid, keyed rendering, loading skeletons,
- * error/empty states, >50 "show more" (C5), select bubbling, and axe.
+ * WMarketList (T602 · D11) — compact SINGLE-COLUMN list (no multi-column grid; the
+ * widget shell owns the bounded, scrolling body), keyed rendering, loading
+ * skeletons, error/empty states, >50 "show more" (C5), select bubbling, and axe.
  */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'

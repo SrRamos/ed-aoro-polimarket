@@ -1,10 +1,10 @@
 /**
- * WMarketDetail (T603) — the responsive presentation contract:
- *   - inline (`inline=true`): a labelled region (NOT a dialog) with the question,
- *     outcomes overview, and the composed bet form + AI panel; a placeholder when
- *     nothing is selected.
- *   - modal (`inline=false`): an SJModal `role="dialog"` (teleported) labelled by
- *     the question, with a describedby summary (AC4.7).
+ * WMarketDetail (T603 · D11) — the compact IN-WIDGET presentation contract:
+ *   - a labelled `region` (NEVER a dialog — dialog semantics moved to the Settings
+ *     modal, per D11's AC4.7 reconciliation), composing the question, outcomes
+ *     overview, bet form + AI panel.
+ *   - a BACK affordance that emits `back` (AC4.4 → in-widget navigation).
+ *   - focus moves to the detail heading on mount and when the market changes.
  *   - closed market → a text "not open for betting" reason (AC4.5).
  *   - >2 outcomes → every outcome shown as a neutral chip (AC4.6).
  *   - bubbles `open-settings` (US7) and `filled` up; plus axe.
@@ -75,31 +75,25 @@ afterEach(() => {
 })
 
 describe('WMarketDetail', () => {
-  it('inline mode renders a labelled region (not a dialog) with the question + bet form', () => {
-    const w = mount(WMarketDetail, { props: baseProps({ inline: true }) })
-    const region = w.get('.w-market-detail--inline')
+  it('renders a labelled region (not a dialog) with the question + bet form + AI', () => {
+    const w = mount(WMarketDetail, { props: baseProps() })
+    const region = w.get('.w-market-detail')
     expect(region.element.tagName).toBe('SECTION')
     expect(w.get('.w-market-detail__title').text()).toBe('Will it rain tomorrow?')
-    // Not a dialog in inline mode.
+    // Never a dialog — the detail is an in-widget view (D11).
     expect(document.querySelector('[role="dialog"]')).toBeNull()
-    // The composed bet form + AI panel are present.
     expect(w.find('.w-bet-form').exists()).toBe(true)
     expect(w.find('.w-ai').exists()).toBe(true)
   })
 
-  it('inline mode with no selection shows a placeholder, not a dead pane', () => {
-    const w = mount(WMarketDetail, { props: baseProps({ inline: true, market: null }) })
-    expect(w.get('.w-market-detail__placeholder').text()).toContain('Select a market')
-    expect(w.find('.w-bet-form').exists()).toBe(false)
+  it('emits `back` from the Back affordance', async () => {
+    const w = mount(WMarketDetail, { props: baseProps() })
+    await w.get('.w-market-detail__back').trigger('click')
+    expect(w.emitted('back')).toHaveLength(1)
   })
 
-  it('inline mode moves focus to the detail heading when a market becomes selected', async () => {
-    const w = mount(WMarketDetail, {
-      attachTo: document.body,
-      props: baseProps({ inline: true, market: null }),
-    })
-    // Selecting a market (null → a market) hands focus to the region heading.
-    await w.setProps({ market: makeMarket() })
+  it('moves focus to the detail heading on mount', async () => {
+    const w = mount(WMarketDetail, { attachTo: document.body, props: baseProps() })
     await flushPromises()
     const heading = w.get('.w-market-detail__title')
     expect(heading.attributes('tabindex')).toBe('-1')
@@ -107,22 +101,22 @@ describe('WMarketDetail', () => {
     w.unmount()
   })
 
-  it('modal mode exposes a dialog labelled by the question with a describedby summary (AC4.7)', () => {
-    mount(WMarketDetail, {
-      attachTo: document.body,
-      props: { ...baseProps({ inline: false }), open: true },
-    })
-    const dialog = document.querySelector('[role="dialog"]')
-    expect(dialog).not.toBeNull()
-    expect(dialog!.getAttribute('aria-modal')).toBe('true')
-    expect(dialog!.getAttribute('aria-labelledby')).toBeTruthy()
-    expect(dialog!.getAttribute('aria-describedby')).toBeTruthy()
-    expect(dialog!.textContent).toContain('Will it rain tomorrow?')
+  it('moves focus to the heading again when the selected market changes', async () => {
+    const w = mount(WMarketDetail, { attachTo: document.body, props: baseProps() })
+    await flushPromises()
+    // Blur, then swap markets — focus should return to the heading.
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    await w.setProps({ market: makeMarket({ id: 'm2', question: 'Different market?' }) })
+    await flushPromises()
+    const heading = w.get('.w-market-detail__title')
+    expect(heading.text()).toBe('Different market?')
+    expect(document.activeElement).toBe(heading.element)
+    w.unmount()
   })
 
   it('shows a text "closed" reason for a closed market (AC4.5)', () => {
     const w = mount(WMarketDetail, {
-      props: baseProps({ inline: true, market: makeMarket({ closed: true }) }),
+      props: baseProps({ market: makeMarket({ closed: true }) }),
     })
     expect(w.get('.w-market-detail-body__closed').text()).toContain('closed')
   })
@@ -133,7 +127,7 @@ describe('WMarketDetail', () => {
       prices: [0.5, 0.3, 0.2],
       tokenIds: ['a', 'b', 'c'],
     })
-    const w = mount(WMarketDetail, { props: baseProps({ inline: true, market }) })
+    const w = mount(WMarketDetail, { props: baseProps({ market }) })
     const overview = w.get('.w-market-detail-body__outcome-list')
     expect(overview.text()).toContain('Team A')
     expect(overview.text()).toContain('Team B')
@@ -144,14 +138,14 @@ describe('WMarketDetail', () => {
   })
 
   it('bubbles open-settings from the AI panel (US7)', async () => {
-    const w = mount(WMarketDetail, { props: baseProps({ inline: true }) })
+    const w = mount(WMarketDetail, { props: baseProps() })
     const openSettings = w.findAll('button').find((b) => b.text() === 'Open Settings')!
     await openSettings.trigger('click')
     expect(w.emitted('open-settings')).toHaveLength(1)
   })
 
-  it('has no axe violations in the inline detail', async () => {
-    const w = mount(WMarketDetail, { attachTo: document.body, props: baseProps({ inline: true }) })
+  it('has no axe violations', async () => {
+    const w = mount(WMarketDetail, { attachTo: document.body, props: baseProps() })
     expect(await axe(w.element, axeOpts)).toHaveNoViolations()
     w.unmount()
   })
