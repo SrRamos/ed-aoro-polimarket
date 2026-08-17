@@ -1,6 +1,49 @@
 /* Base styles — RamosLabs DS, token-only (no raw hex/px/rem).
    Consumes @ramoslabs/tokens/css (imported before this file in main.ts). */
 
+/* --- Self-hosted fonts (T001 · plan §4 P5) ---
+   Rubik (--font-family-sans) + Red Hat Display (--font-family-display), latin-subset
+   WOFF2 sourced from @fontsource/* and served SAME-ORIGIN (no Google CDN → satisfies
+   CSP `font-src 'self'` and drops the render-blocking cross-origin stylesheet + the
+   supply-chain/privacy vector).
+
+   `font-display: optional` eliminates font-swap CLS entirely: if a face isn't ready
+   within the ~100ms block window the system-ui fallback is kept for the page's life,
+   so there is no swap reflow (chosen over size-adjust metric overrides per plan §4 P5).
+
+   Font-byte budget (plan §4, ≤80 KB): the 4 latin WOFF2 faces below total ≈70 KB.
+   Weights are trimmed to what the DS uses most; semibold (600) requests fall back to
+   the nearest shipped face (700) per the CSS font-matching algorithm. */
+@font-face {
+  font-family: 'Rubik';
+  font-style: normal;
+  font-weight: 400;
+  font-display: optional;
+  src: url('@fontsource/rubik/files/rubik-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Rubik';
+  font-style: normal;
+  font-weight: 500;
+  font-display: optional;
+  src: url('@fontsource/rubik/files/rubik-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Rubik';
+  font-style: normal;
+  font-weight: 700;
+  font-display: optional;
+  src: url('@fontsource/rubik/files/rubik-latin-700-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Red Hat Display';
+  font-style: normal;
+  font-weight: 700;
+  font-display: optional;
+  src: url('@fontsource/red-hat-display/files/red-hat-display-latin-700-normal.woff2')
+    format('woff2');
+}
+
 /* --- Minimal reset --- */
 *,
 *::before,

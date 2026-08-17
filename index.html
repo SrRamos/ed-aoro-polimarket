@@ -3,14 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Design system typefaces (not bundled by @ramoslabs/tokens): Rubik + Red Hat Display -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500;600;700;800&family=Rubik:wght@300;400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- viewport-fit=cover so env(safe-area-inset-*) resolves on notched devices (T14);
+         no maximum-scale / user-scalable=no (WCAG 1.4.4). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- DS typefaces (Rubik + Red Hat Display) are self-hosted via @font-face in
+         src/styles/base.css (no Google CDN → CSP font-src 'self'; T001/T2). -->
     <title>Polymarket Widget</title>
   </head>
   <body>
