@@ -1,33 +1,75 @@
 /**
  * OpenRouter AI service (design.md §2.7, spec.md AC7.*, AC9.*, NFR-SEC-1/2).
  *
- * REAL calls to https://openrouter.ai/api/v1 through `http.ts` (the sole fetch
- * caller, NFR-SVC-1). The user-supplied key is attached ONLY in the
- * `Authorization` header, built at call time — never interpolated into a URL,
- * never logged (http.ts logs no headers/bodies). No key is ever bundled.
+ * CONFIG BY ENV (deploy-time): the API key and model id come from
+ * `VITE_OPENROUTER_API_KEY` and `VITE_OPENROUTER_MODEL`. The end user never
+ * supplies them — they only flip an "Enable AI" toggle. `isAiConfigured()`
+ * reports whether BOTH are present; only then is a real network call made.
  *
- * Robust output handling: model discovered at runtime (AC7.4), a degradation
- * ladder json_schema → json_object → fence-strip + retry@temp0 (AC7.5), and
- * strict validation (outcome ∈ outcomes / marketId ∈ presented, confidence
- * clamped, rationale capped — AC7.6/7.10/9.3). A failed/rate-limited/invalid
- * response yields a clean error, never a partial prediction (AC7.9/9.6).
+ * SECURITY NOTE: `VITE_*` vars are inlined into the client bundle at build
+ * time, so in a public deploy the key is exposed. The production-correct path
+ * is a backend proxy that holds the key server-side. See docs/security-review.md.
+ *
+ * REAL calls to https://openrouter.ai/api/v1 through `http.ts` (the sole fetch
+ * caller, NFR-SVC-1). The key is attached ONLY in the `Authorization` header,
+ * built at call time — never interpolated into a URL, never logged.
+ *
+ * Robust output handling: the parse ladder json_schema → json_object →
+ * fence-strip + retry@temp0 (AC7.5), and strict validation (outcome ∈ outcomes /
+ * marketId ∈ presented, confidence clamped, rationale capped — AC7.6/7.10/9.3).
+ * A failed/rate-limited/invalid response yields a clean error, never a partial
+ * prediction (AC7.9/9.6). When AI is NOT configured, callers must not invoke the
+ * network path — use the `sample*` helpers to render a labelled demo suggestion.
  */
 import type { Market } from '../models/market'
-import type { AiMarketPick, AiPrediction, OpenRouterModel } from '../models/prediction'
+import type { AiMarketPick, AiPrediction } from '../models/prediction'
 import { fetchJson, isHttpError } from './http'
 import { clamp } from '../lib/format'
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 
-const MODEL_PREFERENCE = [
-  'z-ai/glm-5.2:free',
-  'nvidia/nemotron-3-ultra-550b-a55b:free',
-  'openai/gpt-oss-20b:free',
-] as const
+/** Last-resort default model, used only when VITE_OPENROUTER_MODEL is empty. */
+const DEFAULT_MODEL = 'z-ai/glm-5.2:free'
 
 const RATIONALE_MAX = 600
-const MODELS_RETRY = { attempts: 2, backoffMs: 300 }
 const CHAT_TIMEOUT_MS = 30_000
+
+/* ------------------------------- config --------------------------------- */
+
+export interface AiConfig {
+  apiKey: string
+  model: string
+}
+
+const trimEnv = (raw: unknown): string => (typeof raw === 'string' ? raw.trim() : '')
+
+/**
+ * Deploy-time env (dotted access so Vite can statically replace it and tests can
+ * override it with `vi.stubEnv`). Read fresh each call — never cached.
+ */
+function readKey(): string {
+  return trimEnv(import.meta.env.VITE_OPENROUTER_API_KEY)
+}
+function readModel(): string {
+  return trimEnv(import.meta.env.VITE_OPENROUTER_MODEL)
+}
+
+/** True when a key AND a model are provided via env (deploy-time config). */
+export function isAiConfigured(): boolean {
+  return readKey() !== '' && readModel() !== ''
+}
+
+/**
+ * Resolve the deploy-time AI config from env, or `null` when no key is set.
+ * The model falls back to DEFAULT_MODEL if the key is present but the model
+ * var is blank — but with a missing key there is NEVER a real call.
+ */
+export function getAiConfig(): AiConfig | null {
+  const apiKey = readKey()
+  if (apiKey === '') return null
+  const model = readModel() || DEFAULT_MODEL
+  return { apiKey, model }
+}
 
 /* ------------------------------- errors --------------------------------- */
 
@@ -46,7 +88,7 @@ function toAiError(err: unknown, fallback: string): AiError {
       return new AiError('The model was rate-limited (HTTP 429). Please wait a moment and retry.')
     }
     if (err.kind === 'http' && err.status === 401) {
-      return new AiError('OpenRouter rejected the API key (HTTP 401). Check it in Settings.')
+      return new AiError('OpenRouter rejected the configured API key (HTTP 401).')
     }
     if (err.kind === 'http') {
       return new AiError(`The AI request failed (HTTP ${err.status}). Please retry.`)
@@ -65,39 +107,6 @@ function authHeaders(apiKey: string): Record<string, string> {
     'HTTP-Referer': 'https://localhost',
     'X-Title': 'Polymarket Widget',
   }
-}
-
-/* --------------------------- model discovery ---------------------------- */
-
-interface ResolvedModel {
-  id: string
-  supportsStructured: boolean
-}
-
-function supportsStructured(m: OpenRouterModel): boolean {
-  return m.supported_parameters?.includes('structured_outputs') ?? false
-}
-
-/** Resolve a live free model + whether it advertises structured outputs (AC7.4). */
-async function resolveModel(apiKey: string): Promise<ResolvedModel> {
-  const res = await fetchJson<{ data?: OpenRouterModel[] }>(`${OPENROUTER_BASE}/models`, {
-    headers: authHeaders(apiKey),
-    retry: MODELS_RETRY,
-  })
-  const free = (res.data ?? []).filter((m) => typeof m.id === 'string' && m.id.endsWith(':free'))
-
-  for (const id of MODEL_PREFERENCE) {
-    const match = free.find((m) => m.id === id)
-    if (match) return { id, supportsStructured: supportsStructured(match) }
-  }
-  const structured = free.find(supportsStructured)
-  if (structured) return { id: structured.id, supportsStructured: true }
-  return { id: 'openrouter/free', supportsStructured: false }
-}
-
-/** Public per the AC7.4 contract — resolves just the model id. */
-export async function pickFreeModel(apiKey: string): Promise<string> {
-  return (await resolveModel(apiKey)).id
 }
 
 /* ---------------------------- parse + validate --------------------------- */
@@ -206,31 +215,41 @@ async function chatComplete(
 
 /**
  * Run the degradation ladder for a validated structured completion (AC7.5):
- *   1) json_schema strict (if advertised) else json_object, temp 0.2
+ *   1) json_schema strict, temp 0.2
  *   2) on parse/validation failure: retry once, json_object + strict "JSON only"
- *      instruction, temperature 0
- * Returns a validated `T` or throws an AiError (never a partial result).
+ *      instruction (fence-strip via extractJson), temperature 0
+ * HTTP failures on either attempt propagate as a clean AiError (AC7.9). Returns
+ * a validated `T` or throws — never a partial result.
  */
 async function runLadder<T>(
-  apiKey: string,
-  model: ResolvedModel,
+  config: AiConfig,
   system: string,
   user: string,
   jsonSchema: unknown,
   validate: (raw: unknown) => T | null,
 ): Promise<T> {
-  const primaryFormat: ResponseFormat = model.supportsStructured
-    ? { type: 'json_schema', json_schema: jsonSchema }
-    : { type: 'json_object' }
-
-  // Attempt 1 — HTTP failures propagate as a clean error (AC7.9).
-  const first = await chatComplete(apiKey, model.id, system, user, primaryFormat, 0.2)
+  // Attempt 1 — json_schema strict. HTTP failures propagate as a clean error.
+  const first = await chatComplete(
+    config.apiKey,
+    config.model,
+    system,
+    user,
+    { type: 'json_schema', json_schema: jsonSchema },
+    0.2,
+  )
   const firstResult = validate(extractJson(first))
   if (firstResult) return firstResult
 
-  // Attempt 2 — one retry at temperature 0 with an explicit JSON-only instruction.
+  // Attempt 2 — json_object retry at temperature 0 with a JSON-only instruction.
   const retrySystem = `${system}\n\nReply with ONLY a single JSON object. No prose, no code fences.`
-  const second = await chatComplete(apiKey, model.id, retrySystem, user, { type: 'json_object' }, 0)
+  const second = await chatComplete(
+    config.apiKey,
+    config.model,
+    retrySystem,
+    user,
+    { type: 'json_object' },
+    0,
+  )
   const secondResult = validate(extractJson(second))
   if (secondResult) return secondResult
 
@@ -319,15 +338,52 @@ const MARKET_SCHEMA = {
   },
 }
 
+/* ------------------------------ sample mode ------------------------------ */
+
+/**
+ * Deterministic, network-free sample outcome suggestion, shown (with a
+ * "sample — AI not configured" label) when the toggle is ON but no env config
+ * is present. Same spirit as the market-data fixtures fallback: the demo always
+ * shows the feature without ever hitting the network unconfigured.
+ */
+export function sampleOutcome(market: Market): AiPrediction {
+  let best = 0
+  for (let i = 1; i < market.outcomes.length; i++) {
+    if ((market.prices[i] ?? 0) > (market.prices[best] ?? 0)) best = i
+  }
+  const outcome = market.outcomes[best] ?? market.outcomes[0] ?? ''
+  const price = clamp(market.prices[best] ?? 0.5, 0, 1)
+  const pct = Math.round(price * 100)
+  return {
+    recommendedOutcome: outcome,
+    confidence: price,
+    rationale: `Sample suggestion: the market prices "${outcome}" at about ${pct}%, the highest implied probability among the outcomes. This is illustrative demo output, not a live model call.`,
+  }
+}
+
+/** Deterministic, network-free sample market pick (highest volume). */
+export function sampleMarketPick(markets: Market[]): AiMarketPick {
+  let best = 0
+  for (let i = 1; i < markets.length; i++) {
+    if ((markets[i]?.volume ?? 0) > (markets[best]?.volume ?? 0)) best = i
+  }
+  const pick = markets[best]
+  return {
+    recommendedMarketId: pick?.id ?? '',
+    confidence: 0.6,
+    rationale: `Sample pick: "${pick?.question ?? ''}" leads the visible list on volume, a proxy for liquidity and interest. This is illustrative demo output, not a live model call.`,
+  }
+}
+
 /* ------------------------------- public API ------------------------------ */
 
-/** On-demand outcome suggestion for one market (AC7.3–AC7.10). */
-export async function predictOutcome(market: Market, apiKey: string): Promise<AiPrediction> {
+/** On-demand outcome suggestion for one market (AC7.3–AC7.10). Env-configured. */
+export async function predictOutcome(market: Market): Promise<AiPrediction> {
+  const config = getAiConfig()
+  if (!config) throw new AiError('AI is not configured.')
   try {
-    const model = await resolveModel(apiKey)
     return await runLadder<AiPrediction>(
-      apiKey,
-      model,
+      config,
       OUTCOME_SYSTEM,
       outcomeUserPrompt(market),
       OUTCOME_SCHEMA,
@@ -338,14 +394,14 @@ export async function predictOutcome(market: Market, apiKey: string): Promise<Ai
   }
 }
 
-/** On-demand market recommendation over the visible list (AC9.2–AC9.6). */
-export async function recommendMarket(markets: Market[], apiKey: string): Promise<AiMarketPick> {
+/** On-demand market recommendation over the visible list (AC9.2–AC9.6). Env-configured. */
+export async function recommendMarket(markets: Market[]): Promise<AiMarketPick> {
+  const config = getAiConfig()
+  if (!config) throw new AiError('AI is not configured.')
   try {
     const ids = markets.map((m) => m.id)
-    const model = await resolveModel(apiKey)
     return await runLadder<AiMarketPick>(
-      apiKey,
-      model,
+      config,
       MARKET_SYSTEM,
       marketUserPrompt(markets),
       MARKET_SCHEMA,

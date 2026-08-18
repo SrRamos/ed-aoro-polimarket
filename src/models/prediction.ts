@@ -3,12 +3,6 @@
  * Types only.
  */
 
-export interface OpenRouterModel {
-  id: string
-  /** Presence of 'structured_outputs' drives the parse ladder (AC7.4). */
-  supported_parameters?: string[]
-}
-
 export interface AiPrediction {
   /** MUST be a verbatim member of the market's outcomes (AC7.6, AC7.10). */
   recommendedOutcome: string

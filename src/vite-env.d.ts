@@ -20,6 +20,15 @@ interface ImportMetaEnv {
   readonly VITE_PLATFORM_BPS?: string
   /** '1' opts into the gated real CLOB order path (AC10.2). Off by default. */
   readonly VITE_ENABLE_REAL_ORDERS?: string
+  /**
+   * OpenRouter API key for the AI suggestion features. Set by whoever deploys;
+   * the end user only flips the "Enable AI" toggle. WARNING: VITE_* vars are
+   * inlined into the client bundle at build time, so this key is exposed in a
+   * public deploy — use a backend proxy for production (docs/security-review.md).
+   */
+  readonly VITE_OPENROUTER_API_KEY?: string
+  /** OpenRouter model id used for AI suggestions (e.g. `z-ai/glm-5.2:free`). */
+  readonly VITE_OPENROUTER_MODEL?: string
 }
 
 interface ImportMeta {
