@@ -16,6 +16,10 @@ export interface FetchJsonOptions {
   timeoutMs?: number // default 8000
   signal?: AbortSignal // caller-provided cancellation (e.g. debounce supersede, AC2.2)
   headers?: Record<string, string>
+  /** HTTP method. Defaults to GET. */
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  /** JSON request body (serialized here; adds a JSON Content-Type when unset). */
+  body?: unknown
   /** Total attempts (1 = no retry). Retryable failures: network / timeout / 5xx. */
   retry?: { attempts: number; backoffMs: number }
 }
@@ -57,12 +61,16 @@ function isRetryable(err: HttpError): boolean {
   )
 }
 
-async function attemptFetch<T>(
-  url: string,
-  timeoutMs: number,
-  callerSignal: AbortSignal | undefined,
-  headers: Record<string, string> | undefined,
-): Promise<T> {
+interface AttemptInit {
+  timeoutMs: number
+  callerSignal: AbortSignal | undefined
+  headers: Record<string, string> | undefined
+  method: string
+  body: unknown
+}
+
+async function attemptFetch<T>(url: string, init: AttemptInit): Promise<T> {
+  const { timeoutMs, callerSignal, headers, method, body } = init
   const controller = new AbortController()
   let timedOut = false
 
@@ -77,8 +85,18 @@ async function attemptFetch<T>(
     else callerSignal.addEventListener('abort', onCallerAbort)
   }
 
+  const hasBody = body !== undefined && body !== null
+  const finalHeaders: Record<string, string> | undefined = hasBody
+    ? { 'Content-Type': 'application/json', ...headers }
+    : headers
+
   try {
-    const response = await fetch(url, { signal: controller.signal, headers })
+    const response = await fetch(url, {
+      method,
+      signal: controller.signal,
+      headers: finalHeaders,
+      body: hasBody ? JSON.stringify(body) : undefined,
+    })
 
     if (!response.ok) {
       throw {
@@ -131,7 +149,13 @@ export async function fetchJson<T>(url: string, opts: FetchJsonOptions = {}): Pr
   let lastError: HttpError | undefined
   for (let i = 0; i < attempts; i++) {
     try {
-      return await attemptFetch<T>(url, timeoutMs, opts.signal, opts.headers)
+      return await attemptFetch<T>(url, {
+        timeoutMs,
+        callerSignal: opts.signal,
+        headers: opts.headers,
+        method: opts.method ?? 'GET',
+        body: opts.body,
+      })
     } catch (err) {
       // Caller cancellation is not retryable and not an HttpError — propagate.
       if (!isHttpError(err)) throw err
