@@ -184,13 +184,19 @@ const selectedTokenId = computed(() =>
   color: var(--color-text-heading);
 }
 
+/* Side-by-side outcomes (Polymarket "Buy" panel). Two columns by default;
+   auto-fit lets them wrap to one column only when the panel is very narrow. */
 .md__outcomes {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
   gap: var(--space-3);
 }
 
 .oc-btn {
+  /* Per-tone accent/surface/border — Yes→success, No→error (see outcomeTone). */
+  --oc-accent: var(--color-primary);
+  --oc-surface: var(--color-surface);
+  --oc-border: var(--color-border-light);
   position: relative;
   isolation: isolate;
   display: flex;
@@ -200,10 +206,22 @@ const selectedTokenId = computed(() =>
   padding: var(--space-3) var(--space-4);
   font: inherit;
   text-align: left;
-  background: var(--color-surface);
-  border: 2px solid var(--color-border-light);
+  background: var(--oc-surface);
+  border: 2px solid var(--oc-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
+}
+
+.oc-btn--success {
+  --oc-accent: var(--color-success-strong);
+  --oc-surface: var(--color-success-surface);
+  --oc-border: var(--color-success-border);
+}
+
+.oc-btn--error {
+  --oc-accent: var(--color-error-strong);
+  --oc-surface: var(--color-error-surface);
+  --oc-border: var(--color-error-border);
 }
 
 .oc-btn__dot {
@@ -236,7 +254,7 @@ const selectedTokenId = computed(() =>
 }
 
 .oc-btn__check {
-  color: var(--color-primary);
+  color: var(--oc-accent);
   font-weight: var(--font-weight-bold);
 }
 
@@ -246,7 +264,7 @@ const selectedTokenId = computed(() =>
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: var(--color-primary);
+  background: var(--oc-accent);
   opacity: 0;
   transition: opacity var(--duration-fast) var(--easing-out);
 }
@@ -270,9 +288,14 @@ const selectedTokenId = computed(() =>
   }
 }
 
+/* Selected: tone-strong border + a persistent state-layer tint, paired with the
+   ✓ icon and an sr-only "Selected" — never color alone (AC4.2). */
 .oc-btn--selected {
-  border-color: var(--color-primary);
-  background: var(--color-primary-surface);
+  border-color: var(--oc-accent);
+}
+
+.oc-btn--selected::after {
+  opacity: var(--state-pressed);
 }
 
 .md__bet-error {

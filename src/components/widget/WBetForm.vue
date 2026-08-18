@@ -34,6 +34,21 @@ const emit = defineEmits<WBetFormEmits>()
 const amount = ref('')
 const attempted = ref(false)
 
+/**
+ * Polymarket-style quick-add chips. Each button *increments* (never replaces)
+ * the current stake, then flows through the same reactive pipeline as typing,
+ * so cost/shares/"To win"/fees recompute live.
+ */
+const QUICK_ADD = [1, 5, 10, 100] as const
+
+function addAmount(delta: number) {
+  const current = Number.parseFloat(amountText.value)
+  const base = Number.isFinite(current) ? current : 0
+  // toFixed(2) trims binary float artifacts (e.g. 0.1 + 0.2); Number drops the
+  // trailing zeros so "5.00" reads back as "5".
+  amount.value = String(Number((base + delta).toFixed(2)))
+}
+
 // Vue casts an <input type="number"> v-model to a *number*, so `amount.value`
 // may arrive here as a number rather than the string it is typed as. Normalize
 // to a string for the empty/whitespace checks below so `.trim()` never throws.
@@ -124,6 +139,20 @@ defineExpose({
         help="How much you want to stake on this outcome."
       />
 
+      <!-- Quick-add chips — increment the stake (Polymarket "Buy" panel). -->
+      <div class="bf__chips" role="group" aria-label="Add to amount">
+        <button
+          v-for="q in QUICK_ADD"
+          :key="q"
+          type="button"
+          class="bf__chip"
+          :aria-label="`Add $${q}`"
+          @click="addAmount(q)"
+        >
+          +${{ q }}
+        </button>
+      </div>
+
       <!-- Live cost / payout (AC5.2, AC5.3). -->
       <dl class="bf__summary">
         <div class="bf__row">
@@ -135,7 +164,7 @@ defineExpose({
           <dd>{{ shares.toFixed(2) }}</dd>
         </div>
         <div class="bf__row bf__row--accent">
-          <dt>Potential payout <span class="bf__formula">(shares × $1)</span></dt>
+          <dt>To win <span class="bf__formula">(shares × $1)</span></dt>
           <dd>{{ formatCurrency(payout) }}</dd>
         </div>
       </dl>
@@ -217,6 +246,64 @@ defineExpose({
 
 .bf__selected-note {
   color: var(--color-text-muted);
+}
+
+/* Quick-add chips — DS pill affordance with the SJButton state machinery
+   (press-first ::after state-layer, --shadow-focus ring). */
+.bf__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.bf__chip {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--space-10);
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--easing-out);
+}
+
+.bf__chip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--color-primary);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--easing-out);
+}
+
+.bf__chip:active::after {
+  opacity: var(--state-pressed);
+}
+
+.bf__chip:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.bf__chip:focus-visible::after {
+  opacity: var(--state-focus);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bf__chip:hover::after {
+    opacity: var(--state-hover);
+  }
 }
 
 .bf__summary {

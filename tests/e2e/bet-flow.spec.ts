@@ -89,9 +89,21 @@ test('primary flow: search → detail → outcome → amount → bet → positio
   await expect(yesOutcome).toHaveAttribute('aria-checked', 'true')
 
   // 4) ENTER AMOUNT — live cost/payout/fees update from the snapshot price.
-  await dialog.getByLabel('Amount (USD)').fill('100')
-  // payout = (100 / 0.60) × $1  (unique in the dialog)
+  const amountInput = dialog.getByLabel('Amount (USD)')
+  await amountInput.fill('100')
+  // "To win" = (100 / 0.60) × $1  (Polymarket label; value unique in the dialog)
+  await expect(dialog.getByText('To win')).toBeVisible()
   await expect(dialog.getByText('$166.67')).toBeVisible()
+
+  // 4b) QUICK-ADD CHIP — "+$100" *increments* the stake (100 → 200), and the
+  //     "To win" recomputes live: 200 / 0.60 = $333.33.
+  await dialog.getByRole('button', { name: 'Add $100' }).click()
+  await expect(amountInput).toHaveValue('200')
+  await expect(dialog.getByText('$333.33')).toBeVisible()
+  // Reset to the canonical $100 stake for the rest of the happy path.
+  await amountInput.fill('100')
+  await expect(dialog.getByText('$166.67')).toBeVisible()
+
   // additive builder fee shown BEFORE confirmation (AC5.8) — unique in the dialog
   await expect(dialog.getByText('$0.60')).toBeVisible()
 
