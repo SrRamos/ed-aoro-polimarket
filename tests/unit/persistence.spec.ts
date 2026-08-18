@@ -92,32 +92,31 @@ describe('bets store persistence (AC6.1, AC6.4)', () => {
 })
 
 describe('settings store persistence (AC8.1, AC8.2)', () => {
-  it('saves and restores the OpenRouter key', () => {
+  it('defaults AI to off and persists the toggle on (AC8.1)', () => {
     const settings = useSettingsStore()
-    expect(settings.hasKey).toBe(false)
+    expect(settings.aiEnabled).toBe(false)
 
-    settings.saveKey('  sk-or-abc  ')
-    expect(settings.openRouterKey).toBe('sk-or-abc') // trimmed
-    expect(settings.hasKey).toBe(true)
+    settings.setAiEnabled(true)
+    expect(settings.aiEnabled).toBe(true)
 
     const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY)!)
-    expect(stored.openRouterKey).toBe('sk-or-abc')
+    expect(stored.aiEnabled).toBe(true)
+    // No secrets are ever persisted.
+    expect(stored.openRouterKey).toBeUndefined()
 
     setActivePinia(createPinia())
     const reloaded = useSettingsStore()
-    expect(reloaded.openRouterKey).toBe('sk-or-abc')
-    expect(reloaded.hasKey).toBe(true)
+    expect(reloaded.aiEnabled).toBe(true)
   })
 
-  it('clears the key and disables AI (AC8.2)', () => {
+  it('toggles AI off and persists the off state (AC8.2)', () => {
     const settings = useSettingsStore()
-    settings.saveKey('sk-or-abc')
-    settings.clearKey()
-    expect(settings.openRouterKey).toBeNull()
-    expect(settings.hasKey).toBe(false)
+    settings.setAiEnabled(true)
+    settings.toggleAi()
+    expect(settings.aiEnabled).toBe(false)
 
     setActivePinia(createPinia())
     const reloaded = useSettingsStore()
-    expect(reloaded.openRouterKey).toBeNull()
+    expect(reloaded.aiEnabled).toBe(false)
   })
 })

@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   predictOutcome,
   recommendMarket,
-  pickFreeModel,
+  isAiConfigured,
+  getAiConfig,
+  sampleOutcome,
+  sampleMarketPick,
   extractJson,
   validatePrediction,
   validateMarketPick,
@@ -11,6 +14,18 @@ import {
 import type { Market } from '../../src/models/market'
 
 const KEY = 'sk-or-test-key'
+const MODEL = 'z-ai/glm-5.2:free'
+
+/**
+ * Configure AI via env (as a deployment would). A param left `undefined` leaves
+ * that var unset (afterEach unstubs everything). NOTE: no default param values —
+ * defaults would apply on an explicit `undefined` and wrongly stub the var.
+ * Stub each var at most once per test; split scenarios into separate tests.
+ */
+function configureAi(key?: string, model?: string) {
+  if (key !== undefined) vi.stubEnv('VITE_OPENROUTER_API_KEY', key)
+  if (model !== undefined) vi.stubEnv('VITE_OPENROUTER_MODEL', model)
+}
 
 function market(overrides: Partial<Market> = {}): Market {
   return {
@@ -32,7 +47,7 @@ function market(overrides: Partial<Market> = {}): Market {
   }
 }
 
-/* ---- fetch mock: routes /models vs /chat/completions, chats served in order ---- */
+/* ---- fetch mock: serves /chat/completions responses in order ---- */
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -47,19 +62,10 @@ function chatContent(obj: unknown): unknown {
   return { choices: [{ message: { content } }] }
 }
 
-const MODELS_STRUCTURED = {
-  data: [{ id: 'z-ai/glm-5.2:free', supported_parameters: ['structured_outputs'] }],
-}
-const MODELS_NO_STRUCTURED = {
-  data: [{ id: 'z-ai/glm-5.2:free', supported_parameters: [] }],
-}
-
-function mockFetch(opts: { models?: unknown; chats: unknown[] }) {
+function mockChats(chats: unknown[]) {
   let chatIdx = 0
-  const fn = vi.fn(async (url: string | URL) => {
-    const u = String(url)
-    if (u.includes('/models')) return jsonResponse(opts.models ?? MODELS_STRUCTURED)
-    const body = opts.chats[chatIdx++] ?? { choices: [] }
+  const fn = vi.fn(async () => {
+    const body = chats[chatIdx++] ?? { choices: [] }
     return jsonResponse(body)
   })
   globalThis.fetch = fn as unknown as typeof fetch
@@ -71,6 +77,38 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+})
+
+/* ------------------------------- config ---------------------------------- */
+
+describe('env config (isAiConfigured / getAiConfig)', () => {
+  it('isAiConfigured is true when key AND model are set', () => {
+    configureAi(KEY, MODEL)
+    expect(isAiConfigured()).toBe(true)
+  })
+  it('isAiConfigured is false when the key is missing', () => {
+    configureAi(undefined, MODEL)
+    expect(isAiConfigured()).toBe(false)
+  })
+  it('isAiConfigured is false when the model is missing', () => {
+    configureAi(KEY, undefined)
+    expect(isAiConfigured()).toBe(false)
+  })
+
+  it('getAiConfig returns null when no key is set', () => {
+    configureAi(undefined, undefined)
+    expect(getAiConfig()).toBeNull()
+  })
+  it('getAiConfig falls back to a default model when the model is blank', () => {
+    configureAi(KEY, undefined)
+    expect(getAiConfig()).toEqual({ apiKey: KEY, model: expect.any(String) })
+    expect(getAiConfig()?.model).toBeTruthy()
+  })
+  it('getAiConfig returns the exact env config when both are set', () => {
+    configureAi(KEY, MODEL)
+    expect(getAiConfig()).toEqual({ apiKey: KEY, model: MODEL })
+  })
 })
 
 /* ------------------------------- pure helpers ---------------------------- */
@@ -140,77 +178,89 @@ describe('validateMarketPick (AC9.3)', () => {
   })
 })
 
-/* --------------------------- ladder integration -------------------------- */
+/* ------------------------------- sample mode ----------------------------- */
 
-describe('pickFreeModel (AC7.4)', () => {
-  it('prefers the top of the preference chain when present', async () => {
-    mockFetch({ chats: [] })
-    await expect(pickFreeModel(KEY)).resolves.toBe('z-ai/glm-5.2:free')
+describe('sample helpers (network-free fallback)', () => {
+  it('sampleOutcome recommends the highest-priced outcome, never a network call', () => {
+    const fetchFn = mockChats([])
+    const s = sampleOutcome(market({ outcomes: ['Yes', 'No'], prices: [0.6, 0.4] }))
+    expect(s.recommendedOutcome).toBe('Yes')
+    expect(s.confidence).toBeCloseTo(0.6, 6)
+    expect(s.rationale.length).toBeGreaterThan(0)
+    expect(fetchFn).not.toHaveBeenCalled()
   })
-  it('falls back to openrouter/free when no free models are advertised', async () => {
-    mockFetch({ models: { data: [] }, chats: [] })
-    await expect(pickFreeModel(KEY)).resolves.toBe('openrouter/free')
+
+  it('sampleMarketPick recommends the highest-volume market, never a network call', () => {
+    const fetchFn = mockChats([])
+    const pick = sampleMarketPick([
+      market({ id: 'm1', volume: 100 }),
+      market({ id: 'm2', volume: 900 }),
+    ])
+    expect(pick.recommendedMarketId).toBe('m2')
+    expect(fetchFn).not.toHaveBeenCalled()
   })
 })
 
+/* --------------------------- ladder integration -------------------------- */
+
 describe('predictOutcome ladder (AC7.5, AC7.9, AC7.10)', () => {
+  it('throws AiError when AI is not env-configured (never hits the network)', async () => {
+    configureAi(undefined, undefined)
+    const fetchFn = mockChats([])
+    await expect(predictOutcome(market())).rejects.toBeInstanceOf(AiError)
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
   it('returns a validated prediction on the first structured attempt', async () => {
-    const fetchFn = mockFetch({
-      models: MODELS_STRUCTURED,
-      chats: [chatContent({ recommendedOutcome: 'No', confidence: 0.72, rationale: 'thin edge' })],
-    })
-    const result = await predictOutcome(market(), KEY)
+    configureAi(KEY, MODEL)
+    const fetchFn = mockChats([
+      chatContent({ recommendedOutcome: 'No', confidence: 0.72, rationale: 'thin edge' }),
+    ])
+    const result = await predictOutcome(market())
     expect(result).toEqual({ recommendedOutcome: 'No', confidence: 0.72, rationale: 'thin edge' })
-    // 1 models call + 1 chat call
-    expect(fetchFn).toHaveBeenCalledTimes(2)
+    // No /models discovery anymore — one chat call.
+    expect(fetchFn).toHaveBeenCalledTimes(1)
   })
 
   it('retries once at temp 0 after an invalid first response, then succeeds', async () => {
-    const fetchFn = mockFetch({
-      models: MODELS_STRUCTURED,
-      chats: [
-        chatContent({ recommendedOutcome: 'Maybe', confidence: 0.9, rationale: 'invalid' }),
-        chatContent({ recommendedOutcome: 'Yes', confidence: 0.55, rationale: 'ok' }),
-      ],
-    })
-    const result = await predictOutcome(market(), KEY)
+    configureAi(KEY, MODEL)
+    const fetchFn = mockChats([
+      chatContent({ recommendedOutcome: 'Maybe', confidence: 0.9, rationale: 'invalid' }),
+      chatContent({ recommendedOutcome: 'Yes', confidence: 0.55, rationale: 'ok' }),
+    ])
+    const result = await predictOutcome(market())
     expect(result.recommendedOutcome).toBe('Yes')
-    // 1 models + 2 chats (retry)
-    expect(fetchFn).toHaveBeenCalledTimes(3)
+    expect(fetchFn).toHaveBeenCalledTimes(2)
   })
 
-  it('handles fence-wrapped content (json_object model)', async () => {
-    mockFetch({
-      models: MODELS_NO_STRUCTURED,
-      chats: [
-        chatContent('```json\n{"recommendedOutcome":"Yes","confidence":0.6,"rationale":"r"}\n```'),
-      ],
-    })
-    const result = await predictOutcome(market(), KEY)
+  it('handles fence-wrapped content on the retry', async () => {
+    configureAi(KEY, MODEL)
+    mockChats([
+      chatContent('not json at all'),
+      chatContent('```json\n{"recommendedOutcome":"Yes","confidence":0.6,"rationale":"r"}\n```'),
+    ])
+    const result = await predictOutcome(market())
     expect(result.recommendedOutcome).toBe('Yes')
     expect(result.confidence).toBe(0.6)
   })
 
   it('rejects with AiError when both attempts fail validation (AC7.9/AC7.10)', async () => {
-    mockFetch({
-      models: MODELS_STRUCTURED,
-      chats: [
-        chatContent({ recommendedOutcome: 'Maybe', confidence: 0.9, rationale: 'x' }),
-        chatContent({ recommendedOutcome: 'Nope', confidence: 0.9, rationale: 'x' }),
-      ],
-    })
-    await expect(predictOutcome(market(), KEY)).rejects.toBeInstanceOf(AiError)
+    configureAi(KEY, MODEL)
+    mockChats([
+      chatContent({ recommendedOutcome: 'Maybe', confidence: 0.9, rationale: 'x' }),
+      chatContent({ recommendedOutcome: 'Nope', confidence: 0.9, rationale: 'x' }),
+    ])
+    await expect(predictOutcome(market())).rejects.toBeInstanceOf(AiError)
   })
 
   it('surfaces a rate-limit (429) as a clean AiError, no partial result (AC7.9)', async () => {
+    configureAi(KEY, MODEL)
     let idx = 0
-    globalThis.fetch = vi.fn(async (url: string | URL) => {
-      const u = String(url)
-      if (u.includes('/models')) return jsonResponse(MODELS_STRUCTURED)
+    globalThis.fetch = vi.fn(async () => {
       idx++
       return jsonResponse({ error: 'rate limited' }, 429)
     }) as unknown as typeof fetch
-    await expect(predictOutcome(market(), KEY)).rejects.toBeInstanceOf(AiError)
+    await expect(predictOutcome(market())).rejects.toBeInstanceOf(AiError)
     expect(idx).toBe(1)
   })
 })
@@ -219,23 +269,19 @@ describe('recommendMarket ladder (AC9.3, AC9.6)', () => {
   const markets = [market({ id: 'm1' }), market({ id: 'm2', question: 'Other?' })]
 
   it('returns a validated pick whose id is one of the presented markets', async () => {
-    mockFetch({
-      models: MODELS_STRUCTURED,
-      chats: [chatContent({ recommendedMarketId: 'm2', confidence: 0.8, rationale: 'deeper' })],
-    })
-    const pick = await recommendMarket(markets, KEY)
+    configureAi(KEY, MODEL)
+    mockChats([chatContent({ recommendedMarketId: 'm2', confidence: 0.8, rationale: 'deeper' })])
+    const pick = await recommendMarket(markets)
     expect(pick.recommendedMarketId).toBe('m2')
     expect(pick.confidence).toBe(0.8)
   })
 
   it('rejects when the recommended id is never one of the presented markets (AC9.6)', async () => {
-    mockFetch({
-      models: MODELS_STRUCTURED,
-      chats: [
-        chatContent({ recommendedMarketId: 'ghost', confidence: 0.8, rationale: 'x' }),
-        chatContent({ recommendedMarketId: 'ghost', confidence: 0.8, rationale: 'x' }),
-      ],
-    })
-    await expect(recommendMarket(markets, KEY)).rejects.toBeInstanceOf(AiError)
+    configureAi(KEY, MODEL)
+    mockChats([
+      chatContent({ recommendedMarketId: 'ghost', confidence: 0.8, rationale: 'x' }),
+      chatContent({ recommendedMarketId: 'ghost', confidence: 0.8, rationale: 'x' }),
+    ])
+    await expect(recommendMarket(markets)).rejects.toBeInstanceOf(AiError)
   })
 })
