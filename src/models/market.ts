@@ -14,9 +14,15 @@ export interface RawGammaMarket {
   clobTokenIds: string // JSON-encoded string[]
   volumeNum?: number
   liquidityNum?: number
+  /** String variants Gamma also returns; numeric `*Num` fields are preferred. */
+  volume?: string
+  liquidity?: string
   endDate?: string
+  endDateIso?: string
   image?: string
   icon?: string
+  /** Not returned by Gamma /markets; derived heuristically in normalization. */
+  category?: string
   active: boolean
   closed: boolean
 }

@@ -1,15 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import type { Market } from './models/market'
 import type { BetOrder, Position } from './models/bet'
 import type { AiPrediction, AiMarketPick } from './models/prediction'
 import type { ViewStatus } from './lib/status'
-import {
-  MARKETS,
-  DEFAULT_MARKETS,
-  AI_PREDICTIONS,
-  AI_MARKET_PICK,
-} from './fixtures/markets'
+import { AI_PREDICTIONS, AI_MARKET_PICK } from './fixtures/markets'
+import { useMarketsStore } from './stores/markets.store'
 import { computeFees, DEMO_BUILDER_CONFIG } from './lib/fees'
 import WMarketSearch from './components/widget/WMarketSearch.vue'
 import WMarketList from './components/widget/WMarketList.vue'
@@ -19,40 +16,39 @@ import WAiMarketPick from './components/widget/WAiMarketPick.vue'
 import WBetReceipt from './components/widget/WBetReceipt.vue'
 import WSettings from './components/widget/WSettings.vue'
 import SJButton from './components/ui/SJButton.vue'
+import SJBadge from './components/ui/SJBadge.vue'
 
 /* ---------------------------------------------------------------- *
- * All state below is driven from fixtures — no network, no SDK.
- * Components are props-driven so a real store/service layer can be
- * injected later without rewriting them.
+ * Market data (search / browse / detail source) now comes from the
+ * Pinia markets store, which reads the REAL Polymarket Gamma API and
+ * degrades gracefully to fixtures if the network is unreachable.
+ * Betting stays MOCK; the AI panels stay canned. Components remain
+ * props-driven — only the data source changed.
  * ---------------------------------------------------------------- */
 
 const builderConfig = DEMO_BUILDER_CONFIG
+
+const marketsStore = useMarketsStore()
+const { usingFallback } = storeToRefs(marketsStore)
 
 /* --- Dev demo controls (audit aid; kept out of the main look) --- */
 type DemoState = 'auto' | 'loading' | 'empty' | 'error'
 const demoState = ref<DemoState>('auto')
 const forceAiError = ref(false)
 
-/* --- Search / browse --- */
+/* --- Search / browse (driven by the store) --- */
 const query = ref('')
-const activeQuery = ref('')
-const listStatus = ref<ViewStatus>('loading')
-let loadTimer: ReturnType<typeof setTimeout> | undefined
 
-const filteredMarkets = computed<Market[]>(() => {
-  const q = activeQuery.value.trim().toLowerCase()
-  if (!q) return DEFAULT_MARKETS
-  return MARKETS.filter(
-    (m) =>
-      m.question.toLowerCase().includes(q) ||
-      m.category.toLowerCase().includes(q) ||
-      m.outcomes.some((o) => o.toLowerCase().includes(q)),
-  )
-})
+// Dev override still wins so the auditor can inspect each state.
+const listStatus = computed<ViewStatus>(() =>
+  demoState.value !== 'auto' ? demoState.value : marketsStore.listStatus,
+)
 
 const displayedMarkets = computed<Market[]>(() =>
-  listStatus.value === 'success' ? filteredMarkets.value : [],
+  listStatus.value === 'success' ? marketsStore.displayedMarkets : [],
 )
+
+const activeQuery = computed(() => marketsStore.query)
 
 const listHeading = computed(() =>
   activeQuery.value.trim() ? 'Search results' : 'Top markets by volume',
@@ -63,26 +59,12 @@ const listEmptyMessage = computed(() =>
     : 'No active markets right now. Check back soon.',
 )
 
-function runLoad() {
-  if (loadTimer) clearTimeout(loadTimer)
-  // Dev override wins so the auditor can inspect each state.
-  const override = demoState.value
-  if (override !== 'auto') {
-    listStatus.value = 'loading'
-    loadTimer = setTimeout(() => {
-      listStatus.value = override
-    }, 450)
-    return
-  }
-  listStatus.value = 'loading'
-  loadTimer = setTimeout(() => {
-    listStatus.value = filteredMarkets.value.length ? 'success' : 'empty'
-  }, 450)
+function onSearch(q: string) {
+  marketsStore.search(q)
 }
 
-function onSearch(q: string) {
-  activeQuery.value = q
-  runLoad()
+function onRetry() {
+  marketsStore.retry()
 }
 
 /* --- Detail / outcome selection --- */
@@ -93,6 +75,7 @@ const betFormResetKey = ref(0)
 
 function selectMarket(market: Market) {
   selectedMarket.value = market
+  marketsStore.selectMarket(market)
   selectedIndex.value = null
   betError.value = null
   aiStatus.value = 'idle'
@@ -215,7 +198,9 @@ const recommendedMarketId = computed(() =>
 )
 const recommendedQuestion = computed(() => {
   const id = recommendedMarketId.value
-  return id ? (MARKETS.find((m) => m.id === id)?.question ?? null) : null
+  return id
+    ? (marketsStore.displayedMarkets.find((m) => m.id === id)?.question ?? null)
+    : null
 })
 
 function requestAiMarketPick() {
@@ -269,9 +254,9 @@ function clearKey() {
 }
 
 /* --- Lifecycle --- */
-onMounted(runLoad)
+onMounted(() => marketsStore.loadDefaultList())
 onBeforeUnmount(() => {
-  ;[loadTimer, betTimer, receiptTimer, aiTimer, ampTimer].forEach(
+  ;[betTimer, receiptTimer, aiTimer, ampTimer].forEach(
     (t) => t && clearTimeout(t),
   )
 })
@@ -313,12 +298,7 @@ onBeforeUnmount(() => {
       <div class="demo__body">
         <div class="demo__field">
           <label class="demo__label" for="demo-state">List state</label>
-          <select
-            id="demo-state"
-            v-model="demoState"
-            class="demo__select"
-            @change="runLoad"
-          >
+          <select id="demo-state" v-model="demoState" class="demo__select">
             <option value="auto">Auto (populated / empty)</option>
             <option value="loading">Loading (skeletons)</option>
             <option value="empty">Empty</option>
@@ -347,6 +327,13 @@ onBeforeUnmount(() => {
         @open-settings="openSettings"
       />
 
+      <p v-if="usingFallback" class="app__fallback" role="status">
+        <SJBadge tone="warning" icon="⚠">Sample data</SJBadge>
+        <span
+          >Showing sample data — live Polymarket is unreachable right now.</span
+        >
+      </p>
+
       <WMarketList
         :markets="displayedMarkets"
         :status="listStatus"
@@ -355,7 +342,7 @@ onBeforeUnmount(() => {
         error-message="Couldn’t reach the markets service. Check your connection and retry."
         :recommended-market-id="recommendedMarketId"
         @select="selectMarket"
-        @retry="runLoad"
+        @retry="onRetry"
       />
 
       <WPositions :positions="positions" />
@@ -550,6 +537,19 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: var(--space-6);
   flex: 1 1 auto;
+}
+
+.app__fallback {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: calc(var(--space-6) * -1 + var(--space-2));
+  font-size: var(--font-size-sm);
+  color: var(--color-warning-text);
+  background: var(--color-warning-surface);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-md);
 }
 
 .app__footer {
