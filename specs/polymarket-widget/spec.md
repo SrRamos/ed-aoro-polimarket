@@ -40,7 +40,7 @@ Everything lives on **one page** (`App.vue`) with a vertical, mobile-first layou
 - **Snapshot price** — the `outcomePrices` value returned by Gamma at fetch time (not a live CLOB quote).
 - **builderCode** — a `bytes32` identifier of a Polymarket builder account, carried in the `builder` field of a signed V2 order to attribute volume/fees. Public (not a secret); configurable here with a placeholder default.
 - **Builder fee** — a flat % of notional a builder may charge (taker ≤100 bps, maker ≤50 bps), **additive** to the platform fee; `fee = notional × bps / 10000`.
-- **Notional** — the bet's cost basis (size × price) on which fees are computed.
+- **Notional** — the bet's cost basis (= the stake amount the user pays) on which fees are computed.
 
 ---
 
@@ -64,7 +64,7 @@ Everything lives on **one page** (`App.vue`) with a vertical, mobile-first layou
 
 ### Capability D — Place a bet (simulated, builder-aware)
 
-- **US5** — As a user, I want to place a simulated bet on a chosen outcome with a chosen amount and see the cost, the real builder/platform **fee breakdown**, and the potential payout, so I can experience a builder-aware betting flow without real funds. The receipt records the builderCode that a real order would carry.
+- **US5** — As a user, I want to place a simulated bet on a chosen outcome with a chosen amount and see what I pay and the potential payout (Polymarket-style "To win" + "Avg. Price"), so I can experience a builder-aware betting flow without real funds. The real builder/platform fee is still computed and recorded on the receipt (the builderCode a real order would carry), even though the bet form no longer displays the fee breakdown.
 
 ### Capability E — View positions
 
@@ -199,11 +199,11 @@ WHILE an outcome is selected and a valid amount is entered, WHEN the user submit
 
 <a id="ac5-2"></a>
 **AC5.2** (Ubiquitous, cost math)
-THE SYSTEM SHALL compute bet **cost = size × price** (using the selected outcome's snapshot price) and display it live as the amount changes.
+THE SYSTEM SHALL treat the **stake amount the user enters as the cost** (`cost = stake amount`) — the dollars they pay, matching Polymarket's real Buy panel — and record it as the notional on which fees are computed. _(Change note: corrected from the previous `cost = size × price`, which was inconsistent with `shares = size / price` and produced impossible returns.)_
 
 <a id="ac5-3"></a>
 **AC5.3** (Ubiquitous, payout math)
-THE SYSTEM SHALL compute **shares = size / price** and **potential payout = shares × $1.00** (each share resolves to $1 on a winning outcome) and display the potential payout live.
+THE SYSTEM SHALL compute **shares = amount / price** and **potential payout ("To win") = shares × $1.00 = amount / price** (each share resolves to $1 on a winning outcome) and display the potential payout live, alongside the **average price** in cents ("Avg. Price XX¢").
 
 <a id="ac5-4"></a>
 **AC5.4** (Unwanted-behavior, invalid amount)
@@ -222,12 +222,12 @@ WHEN a bet is filled, THE SYSTEM SHALL surface a receipt/confirmation (toast) vi
 IF `BettingService.placeBet` rejects (validation or simulated failure), THEN THE SYSTEM SHALL show an error state, leave the positions store unchanged, and allow the user to retry.
 
 <a id="ac5-8"></a>
-**AC5.8** (Ubiquitous, fee breakdown)
-THE SYSTEM SHALL compute and display, **before the user confirms the bet**, a fee breakdown consisting of the **notional** (= cost), the **platform fee**, and the **additive builder fee**, where each fee is computed as `fee = notional × bps / 10000` and the builder rate is `builderTakerBps` (≤ 100) or `builderMakerBps` (≤ 50) per the order side, plus the resulting **total cost** (notional + platform fee + builder fee). Builder and platform fees are additive; a zero platform fee SHALL NOT suppress a configured builder fee.
+**AC5.8** (Ubiquitous, fee computation — recorded, not shown in the bet form)
+THE SYSTEM SHALL compute a fee breakdown consisting of the **notional** (= cost = stake amount), the **platform fee**, and the **additive builder fee**, where each fee is computed as `fee = notional × bps / 10000` and the builder rate is `builderTakerBps` (≤ 100) or `builderMakerBps` (≤ 50) per the order side, plus the resulting **total** (notional + platform fee + builder fee). Builder and platform fees are additive; a zero platform fee SHALL NOT suppress a configured builder fee. _(Change note: to match Polymarket's real Buy panel, this breakdown is NO LONGER surfaced in the bet form UI. It remains computed and recorded on the receipt/position for builder-awareness — see AC5.9 and AC6.2 — and the values are still surfaced on the filled receipt/position.)_
 
 <a id="ac5-9"></a>
 **AC5.9** (Ubiquitous, builderCode in receipt)
-THE SYSTEM SHALL include the configured **builderCode (`bytes32`)** and the computed fee breakdown in the bet receipt and the persisted position, reflecting the `builder` field a real signed order would carry. The builderCode SHALL be sourced from configuration (env/settings) with a placeholder default and SHALL NEVER be a real hardcoded value committed to source.
+THE SYSTEM SHALL include the configured **builderCode (`bytes32`)** and the computed fee breakdown in the bet receipt and the persisted position, reflecting the `builder` field a real signed order would carry — the widget stays builder-aware in its data/receipt even though the bet form no longer displays the fee breakdown (AC5.8). The builderCode SHALL be sourced from configuration (env/settings) with a placeholder default and SHALL NEVER be a real hardcoded value committed to source.
 
 ---
 
@@ -385,7 +385,7 @@ IF the real path is enabled and an order is about to be signed, THEN THE SYSTEM 
 - **US2 — Search.** Given text in the search box, When input settles after debounce, Then at most one request runs and results/empty/loading/error states render correctly (AC2.1–AC2.6).
 - **US3 — Browse.** Given a fresh load with no query, When the page mounts, Then top-by-volume active markets render with skeletons while loading and an explicit empty/error state otherwise (AC3.1–AC3.5).
 - **US4 — Detail.** Given a market card, When selected, Then the detail opens with outcomes signalled by triad+text, selection drives the bet form, and focus returns on close (AC4.1–AC4.5).
-- **US5 — Bet (builder-aware).** Given a selected outcome and a valid amount, When the user submits, Then cost = size×price and payout = (size/price)×$1 are shown live, the additive builder/platform fee breakdown (`fee = notional × bps / 10000`) is shown before confirmation, a simulated receipt carrying the fees + builderCode is produced, the position persists, and invalid input/no-outcome/service-failure are blocked with specific feedback (AC5.1–AC5.9).
+- **US5 — Bet (builder-aware).** Given a selected outcome and a valid amount, When the user submits, Then cost = amount and "To win" = amount/price (with "Avg. Price XX¢") are shown live, the additive builder/platform fee (`fee = notional × bps / 10000`, notional = amount) is computed and recorded on the receipt/position (no longer shown in the bet form), a simulated receipt carrying the fees + builderCode is produced, the position persists, and invalid input/no-outcome/service-failure are blocked with specific feedback (AC5.1–AC5.9).
 - **US6 — Positions.** Given placed bets, When the page reloads, Then positions restore from `localStorage` with their fee breakdown + builderCode; an empty first-run state shows when none exist; corrupt storage recovers to empty (AC6.1–AC6.4).
 - **US7 — AI outcome pick.** Given the AI toggle is on and env-configured, When the user explicitly requests an outcome suggestion, Then exactly one request runs against the env-configured model, output is parsed via the ladder and validated (`recommendedOutcome` ∈ outcomes, confidence clamped), rendered with a numeric confidence signal + disclaimer, and failures show retry without surfacing invalid results; when on but unconfigured, a labelled sample is shown with no network call (AC7.1–AC7.10).
 - **US9 — AI market pick.** Given a configured key, When the user explicitly requests a market recommendation over the visible list, Then exactly one request runs, output is validated (`recommendedMarketId` ∈ presented markets, confidence clamped), the recommended market is identified with a numeric confidence signal + disclaimer, and failures/invalid results show retry without fabrication (AC9.1–AC9.6).

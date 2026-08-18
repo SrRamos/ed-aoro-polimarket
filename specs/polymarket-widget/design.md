@@ -205,7 +205,7 @@ export interface BetOrder {
 }
 
 export interface FeeBreakdown {
-  notional: number // = cost = size × price (AC5.2, AC5.8)
+  notional: number // = cost = stake amount the user pays (AC5.2, AC5.8)
   builderBps: number // builderTakerBps (≤100) or builderMakerBps (≤50) per side (AC5.8)
   builderFee: number // notional × builderBps / 10000
   platformBps: number // 0 by default; additive with builderFee, never suppressed (AC5.8)
@@ -276,7 +276,8 @@ export function computeFees(notional: number, cfg: BuilderConfig, side: 'taker' 
 export class MockBettingService implements BettingService {
   constructor(private builderConfig: BuilderConfig);
   placeBet(order: BetOrder): Promise<BetReceipt>;
-  // internal: cost = size×price, shares = size/price, fees = computeFees(...),
+  // internal: cost = amount (notional = the stake the user pays), shares = amount/price,
+  // fees = computeFees(cost, ...) recorded on the receipt (not shown in the bet form UI),
   // simulated network delay (300–800ms), txHash = `mock-0x${uuid}`.
 }
 
@@ -392,18 +393,18 @@ export function isRealOrderPathEnabled(): boolean
 
 ### 3.2 `W*` widgets (`components/widget/`)
 
-| Component       | Composes                                                                       | Primary AC coverage                                            |
-| --------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| `WMarketSearch` | `SJInput`, `SJLiveRegion` + `useMarketSearch`                                  | AC2.1–AC2.6                                                    |
-| `WMarketList`   | `SJSkeleton`, `SJCard` (via `WMarketCard`), `WAiMarketPick` slot               | AC3.1–AC3.5, AC2.4/2.6 (renders default list when query empty) |
-| `WMarketCard`   | `SJCard`, `SJBadge`                                                            | AC3.2                                                          |
-| `WMarketDetail` | `SJModal`, `SJBadge` (outcomes), `WBetForm`, `WAiPrediction`                   | AC4.1–AC4.5                                                    |
-| `WBetForm`      | `SJInput` (amount), `SJButton`, fee breakdown table                            | AC5.1–AC5.5, AC5.8                                             |
-| `WBetReceipt`   | `SJBadge`/toast via `SJLiveRegion`                                             | AC5.6, AC5.9                                                   |
-| `WPositions`    | `SJCard` list, empty state                                                     | AC6.1–AC6.4                                                    |
-| `WAiPrediction` | `SJButton`, confidence bar (`--color-primary` + numeric label), `SJLiveRegion` | AC7.1–AC7.10                                                   |
-| `WAiMarketPick` | `SJButton`, highlights a `WMarketCard`, `SJLiveRegion`                         | AC9.1–AC9.6                                                    |
-| AI toggle       | native checkbox `role="switch"` + `<label>` in the header (`App.vue`)          | AC8.1–AC8.5                                                    |
+| Component       | Composes                                                                                                             | Primary AC coverage                                            |
+| --------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `WMarketSearch` | `SJInput`, `SJLiveRegion` + `useMarketSearch`                                                                        | AC2.1–AC2.6                                                    |
+| `WMarketList`   | `SJSkeleton`, `SJCard` (via `WMarketCard`), `WAiMarketPick` slot                                                     | AC3.1–AC3.5, AC2.4/2.6 (renders default list when query empty) |
+| `WMarketCard`   | `SJCard`, `SJBadge`                                                                                                  | AC3.2                                                          |
+| `WMarketDetail` | `SJModal`, `SJBadge` (outcomes), `WBetForm`, `WAiPrediction`                                                         | AC4.1–AC4.5                                                    |
+| `WBetForm`      | `SJInput` (amount), quick-add chips, `SJButton`, Polymarket-style "To win" + "Avg. Price" summary (no fee breakdown) | AC5.1–AC5.5, AC5.8 (fee recorded on receipt, not shown here)   |
+| `WBetReceipt`   | `SJBadge`/toast via `SJLiveRegion`                                                                                   | AC5.6, AC5.9                                                   |
+| `WPositions`    | `SJCard` list, empty state                                                                                           | AC6.1–AC6.4                                                    |
+| `WAiPrediction` | `SJButton`, confidence bar (`--color-primary` + numeric label), `SJLiveRegion`                                       | AC7.1–AC7.10                                                   |
+| `WAiMarketPick` | `SJButton`, highlights a `WMarketCard`, `SJLiveRegion`                                                               | AC9.1–AC9.6                                                    |
+| AI toggle       | native checkbox `role="switch"` + `<label>` in the header (`App.vue`)                                                | AC8.1–AC8.5                                                    |
 
 _Revised 2026-08:_ the `WSettings` modal + `SJInput` key field were removed; AI config is env-based and the only user control is the header **Enable AI** toggle. `App.vue` composes: header (title + **Enable AI** toggle, US8) → `WMarketSearch` (US2) → `WMarketList` incl. `WAiMarketPick` (US3/US9) → `WMarketDetail` incl. `WBetForm`/`WBetReceipt`/`WAiPrediction` (US4/US5/US7) → `WPositions` (US6), matching the analysis §6 UX flow.
 
