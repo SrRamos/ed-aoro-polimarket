@@ -49,9 +49,8 @@ function addAmount(delta: number) {
   amount.value = String(Number((base + delta).toFixed(2)))
 }
 
-// Vue casts an <input type="number"> v-model to a *number*, so `amount.value`
-// may arrive here as a number rather than the string it is typed as. Normalize
-// to a string for the empty/whitespace checks below so `.trim()` never throws.
+// Amount is a text input (inputmode="decimal") so the v-model stays a string
+// and is parsed explicitly. Normalize defensively so `.trim()` never throws.
 const amountText = computed(() => (amount.value == null ? '' : String(amount.value)))
 
 const size = computed(() => Number.parseFloat(amountText.value))
@@ -127,13 +126,10 @@ defineExpose({
       <SJInput
         v-model="amount"
         label="Amount (USD)"
-        type="number"
+        type="text"
         inputmode="decimal"
         prefix="$"
         placeholder="0.00"
-        :min="1"
-        :max="maxAmount"
-        step="1"
         required
         :error="amountError"
         help="How much you want to stake on this outcome."
