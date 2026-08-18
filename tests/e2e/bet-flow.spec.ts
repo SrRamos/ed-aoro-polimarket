@@ -64,9 +64,7 @@ async function stubGamma(page: Page): Promise<void> {
   await page.route('**/gamma-api/**', handler)
 }
 
-test('primary flow: search → detail → outcome → amount → bet → position', async ({
-  page,
-}) => {
+test('primary flow: search → detail → outcome → amount → bet → position', async ({ page }) => {
   await stubGamma(page)
   await page.goto('/')
 
@@ -110,9 +108,7 @@ test('primary flow: search → detail → outcome → amount → bet → positio
   // 6b) POSITION — the detail closed and the position is reflected in the list.
   await expect(dialog).toBeHidden()
   const positions = page.getByRole('region', { name: 'Your positions' })
-  await expect(
-    positions.getByRole('heading', { name: /Your positions/ }),
-  ).toContainText('(1)')
+  await expect(positions.getByRole('heading', { name: /Your positions/ })).toContainText('(1)')
 
   const position = positions.getByRole('listitem').first()
   await expect(position.getByText(E2E_MARKET.question)).toBeVisible()

@@ -37,9 +37,7 @@ const attempted = ref(false)
 // Vue casts an <input type="number"> v-model to a *number*, so `amount.value`
 // may arrive here as a number rather than the string it is typed as. Normalize
 // to a string for the empty/whitespace checks below so `.trim()` never throws.
-const amountText = computed(() =>
-  amount.value == null ? '' : String(amount.value),
-)
+const amountText = computed(() => (amount.value == null ? '' : String(amount.value)))
 
 const size = computed(() => Number.parseFloat(amountText.value))
 const sizeValid = computed(
