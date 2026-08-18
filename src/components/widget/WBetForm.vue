@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { BetOrder, BuilderConfig } from '../../models/bet'
-import { computeFees } from '../../lib/fees'
 import { formatCurrency, formatPercent } from '../../lib/format'
 import SJInput from '../ui/SJInput.vue'
 import SJButton from '../ui/SJButton.vue'
 
 /**
- * Bet form (design.md §3.2, AC5.1–AC5.9). cost = size × price,
- * payout = (size/price) × $1, plus the additive builder + platform fee
- * breakdown (fee = notional × bps / 10000) shown BEFORE confirmation.
+ * Bet form (design.md §3.2, AC5.1–AC5.9). The "Amount (USD)" the user enters
+ * IS what they pay: cost = amount, shares = amount / price, and
+ * "To win" = shares × $1 = amount / price (Polymarket's real Buy panel).
+ * The summary mirrors Polymarket — a prominent "To win" plus "Avg. Price XX¢";
+ * the builder/platform fee is still computed and recorded on the receipt
+ * (builder-aware data), it is just no longer surfaced in this UI.
  * Sticky CTA on mobile (NFR-MF-4); amount validated via :user-invalid.
  */
 type WBetFormProps = {
@@ -37,7 +39,7 @@ const attempted = ref(false)
 /**
  * Polymarket-style quick-add chips. Each button *increments* (never replaces)
  * the current stake, then flows through the same reactive pipeline as typing,
- * so cost/shares/"To win"/fees recompute live.
+ * so shares and "To win" recompute live.
  */
 const QUICK_ADD = [1, 5, 10, 100] as const
 
@@ -59,15 +61,18 @@ const sizeValid = computed(
 )
 const hasOutcome = computed(() => !!props.outcome && props.price != null)
 
-const cost = computed(() =>
-  hasOutcome.value && sizeValid.value ? size.value * (props.price ?? 0) : 0,
-)
+// cost = the stake amount the user enters (NOT amount × price) — the dollars
+// they pay. shares = amount / price; "To win" = shares × $1 = amount / price.
 const shares = computed(() =>
   hasOutcome.value && sizeValid.value && props.price ? size.value / props.price : 0,
 )
 const payout = computed(() => shares.value * 1)
 
-const fees = computed(() => computeFees(cost.value, props.builderConfig, 'taker'))
+// Avg. Price in cents, Polymarket-style: 0.60 → "60", 0.335 → "33.5".
+const avgPriceCents = computed(() => {
+  const cents = (props.price ?? 0) * 100
+  return Number.isInteger(cents) ? String(cents) : cents.toFixed(1)
+})
 
 const amountError = computed(() => {
   if (!attempted.value && amountText.value === '') return ''
@@ -149,51 +154,16 @@ defineExpose({
         </button>
       </div>
 
-      <!-- Live cost / payout (AC5.2, AC5.3). -->
-      <dl class="bf__summary">
-        <div class="bf__row">
-          <dt>Cost <span class="bf__formula">(size × price)</span></dt>
-          <dd>{{ formatCurrency(cost) }}</dd>
-        </div>
-        <div class="bf__row">
-          <dt>Shares <span class="bf__formula">(size ÷ price)</span></dt>
-          <dd>{{ shares.toFixed(2) }}</dd>
-        </div>
-        <div class="bf__row bf__row--accent">
-          <dt>To win <span class="bf__formula">(shares × $1)</span></dt>
-          <dd>{{ formatCurrency(payout) }}</dd>
-        </div>
-      </dl>
-
-      <!-- Fee breakdown before confirmation (AC5.8). -->
-      <section class="bf__fees" aria-label="Fee breakdown">
-        <h4 class="bf__fees-title">Fee breakdown</h4>
-        <dl class="bf__summary">
-          <div class="bf__row">
-            <dt>Notional</dt>
-            <dd>{{ formatCurrency(fees.notional) }}</dd>
-          </div>
-          <div class="bf__row">
-            <dt>
-              Builder fee <span class="bf__formula">({{ fees.builderBps }} bps)</span>
-            </dt>
-            <dd>{{ formatCurrency(fees.builderFee) }}</dd>
-          </div>
-          <div class="bf__row">
-            <dt>
-              Platform fee <span class="bf__formula">({{ fees.platformBps }} bps)</span>
-            </dt>
-            <dd>{{ formatCurrency(fees.platformFee) }}</dd>
-          </div>
-          <div class="bf__row bf__row--total">
-            <dt>Total cost</dt>
-            <dd>{{ formatCurrency(fees.total) }}</dd>
-          </div>
+      <!-- Polymarket-style payout summary: prominent "To win" + "Avg. Price XX¢"
+           (AC5.3). The stake the user enters is what they pay; the fee is still
+           recorded on the receipt but not shown here (AC5.8). -->
+      <div class="bf__payout">
+        <dl class="bf__payout-line">
+          <dt class="bf__payout-label">To win</dt>
+          <dd class="bf__payout-value">{{ formatCurrency(payout) }}</dd>
         </dl>
-        <p class="bf__fee-note">
-          fee = notional × bps ÷ 10000. Builder and platform fees are additive.
-        </p>
-      </section>
+        <p class="bf__payout-avg">Avg. Price {{ avgPriceCents }}¢</p>
+      </div>
     </template>
 
     <div class="bf__cta">
@@ -302,75 +272,43 @@ defineExpose({
   }
 }
 
-.bf__summary {
+/* Polymarket-style payout block: prominent "To win", small "Avg. Price" below. */
+.bf__payout {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-}
-
-.bf__row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.bf__row dt {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-}
-
-.bf__formula {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-}
-
-.bf__row dd {
-  margin: 0;
-  font-weight: var(--font-weight-semibold);
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-strong);
-}
-
-.bf__row--accent dd {
-  color: var(--color-primary-dark);
-  font-size: var(--font-size-lg);
-}
-
-.bf__fees {
+  gap: var(--space-1);
   padding: var(--space-4);
   background: var(--color-surface-secondary);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
 }
 
-.bf__fees-title {
-  margin-bottom: var(--space-3);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
+.bf__payout-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.bf__payout-label {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-secondary);
 }
 
-.bf__row--total {
-  margin-top: var(--space-2);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--color-border-light);
-}
-
-.bf__row--total dt,
-.bf__row--total dd {
-  font-size: var(--font-size-base);
+.bf__payout-value {
+  margin: 0;
+  font-size: var(--font-size-2xl);
   font-weight: var(--font-weight-bold);
-  color: var(--color-text-heading);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary-dark);
 }
 
-.bf__fee-note {
-  margin-top: var(--space-3);
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
+.bf__payout-avg {
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
 }
 
 /* Sticky CTA within the thumb zone on mobile (NFR-MF-4). */

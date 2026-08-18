@@ -65,19 +65,34 @@ describe('computeFees (AC5.8 — additive builder + platform, fee = notional × 
 })
 
 describe('MockBettingService.placeBet (AC5.1–AC5.3, AC5.9)', () => {
-  it('resolves a filled receipt with cost = size×price and shares = size/price', async () => {
+  it('resolves a filled receipt with cost = amount and toWin = amount/price', async () => {
     const svc = new MockBettingService(CFG, { delayMs: 0 })
     const receipt = await svc.placeBet(order({ size: 100, price: 0.5 }))
 
     expect(receipt.status).toBe('filled')
     expect(receipt.avgPrice).toBe(0.5)
-    expect(receipt.cost).toBeCloseTo(50, 10) // 100 × 0.5
-    expect(receipt.shares).toBeCloseTo(200, 10) // 100 / 0.5
-    expect(receipt.fees.notional).toBeCloseTo(50, 10)
-    expect(receipt.fees.builderFee).toBeCloseTo(0.5, 10) // 50 × 100 / 10000
-    expect(receipt.builderCode).toBe('0xabc') // AC5.9
+    expect(receipt.cost).toBeCloseTo(100, 10) // = stake amount (AC5.2)
+    expect(receipt.shares).toBeCloseTo(200, 10) // 100 / 0.5 → toWin = shares × $1
+    expect(receipt.fees.notional).toBeCloseTo(100, 10) // notional = amount
+    expect(receipt.fees.builderFee).toBeCloseTo(1, 10) // 100 × 100 / 10000
+    expect(receipt.builderCode).toBe('0xabc') // AC5.9 (recorded on receipt)
     expect(receipt.txHash).toMatch(/^mock-0x/)
     expect(typeof receipt.filledAt).toBe('string')
+  })
+
+  it('matches the Polymarket model: cost = amount, toWin = amount / price', async () => {
+    const svc = new MockBettingService(CFG, { delayMs: 0 })
+
+    // E2E market: $100 on Yes @ 0.60 → cost $100, shares/toWin 166.67.
+    const r1 = await svc.placeBet(order({ size: 100, price: 0.6 }))
+    expect(r1.cost).toBeCloseTo(100, 10)
+    expect(r1.shares).toBeCloseTo(166.6667, 3) // 100 / 0.60
+    expect(r1.shares * 1).toBeCloseTo(166.6667, 3) // toWin = shares × $1
+
+    // $5 on a 33.5¢ outcome → cost $5, toWin ≈ 14.93 (never a ~9× return).
+    const r2 = await svc.placeBet(order({ size: 5, price: 0.335 }))
+    expect(r2.cost).toBeCloseTo(5, 10)
+    expect(r2.shares).toBeCloseTo(14.9254, 3) // 5 / 0.335
   })
 
   it('rejects (not sync-throw) an invalid amount (AC5.4/AC5.7)', async () => {

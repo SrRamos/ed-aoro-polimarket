@@ -26,11 +26,12 @@ import { test, expect, type Page } from '@playwright/test'
  * Betting is the app's own `MockBettingService` (no network) — never stubbed.
  *
  * EXPECTED MATH (amount = $100 on "Yes" @ 0.60, taker builder 100 bps, platform 0):
- *   cost   = 100 × 0.60            = $60.00
- *   shares = 100 ÷ 0.60            = 166.67
- *   payout = shares × $1           = $166.67
- *   builder fee = 60 × 100 / 10000 = $0.60
- *   total  = 60 + 0.60 + 0         = $60.60   (toast + position)
+ *   The amount the user enters IS what they pay (Polymarket's Buy panel).
+ *   cost   = amount               = $100.00
+ *   shares = 100 ÷ 0.60           = 166.67
+ *   toWin  = shares × $1          = $166.67   (shown in the form)
+ *   builder fee = 100 × 100/10000 = $1.00     (recorded on the receipt, NOT shown in the form)
+ *   total  = 100 + 1.00 + 0       = $101.00   (toast + position, builder-aware data)
  */
 
 const E2E_MARKET = {
@@ -94,6 +95,8 @@ test('primary flow: search → detail → outcome → amount → bet → positio
   // "To win" = (100 / 0.60) × $1  (Polymarket label; value unique in the dialog)
   await expect(dialog.getByText('To win')).toBeVisible()
   await expect(dialog.getByText('$166.67')).toBeVisible()
+  // Avg. Price shown Polymarket-style in cents.
+  await expect(dialog.getByText(/Avg\. Price 60¢/)).toBeVisible()
 
   // 4b) QUICK-ADD CHIP — "+$100" *increments* the stake (100 → 200), and the
   //     "To win" recomputes live: 200 / 0.60 = $333.33.
@@ -104,8 +107,8 @@ test('primary flow: search → detail → outcome → amount → bet → positio
   await amountInput.fill('100')
   await expect(dialog.getByText('$166.67')).toBeVisible()
 
-  // additive builder fee shown BEFORE confirmation (AC5.8) — unique in the dialog
-  await expect(dialog.getByText('$0.60')).toBeVisible()
+  // The bet form no longer surfaces a fee breakdown (Polymarket parity); the
+  // builder fee is still computed and recorded on the receipt (asserted below).
 
   // 5) PLACE THE (MOCK) BET.
   await dialog.getByRole('button', { name: 'Place bet' }).click()
@@ -115,7 +118,7 @@ test('primary flow: search → detail → outcome → amount → bet → positio
   await expect(toast).toBeVisible()
   await expect(toast).toContainText('$100.00')
   await expect(toast).toContainText('Yes')
-  await expect(toast).toContainText('$60.60') // total (notional + builder fee)
+  await expect(toast).toContainText('$101.00') // total (notional $100 + builder fee $1)
 
   // 6b) POSITION — the detail closed and the position is reflected in the list.
   await expect(dialog).toBeHidden()
@@ -126,9 +129,9 @@ test('primary flow: search → detail → outcome → amount → bet → positio
   await expect(position.getByText(E2E_MARKET.question)).toBeVisible()
   // Outcome badge "Yes" (exact — the question also contains "YES").
   await expect(position.getByText('Yes', { exact: true })).toBeVisible()
-  // Size $100.00 (amount), Price 60%, Cost $60.00, Total $60.60.
-  await expect(position.getByText('$100.00')).toBeVisible()
+  // Size $100.00 = Cost $100.00 (amount is the stake), Price 60%, Total $101.00.
+  // $100.00 now appears twice (Size and Cost), so scope to the first match.
+  await expect(position.getByText('$100.00').first()).toBeVisible()
   await expect(position.getByText('60%')).toBeVisible()
-  await expect(position.getByText('$60.00')).toBeVisible() // cost (unique here)
-  await expect(position.getByText(/Total:\s*\$60\.60/)).toBeVisible()
+  await expect(position.getByText(/Total:\s*\$101\.00/)).toBeVisible()
 })

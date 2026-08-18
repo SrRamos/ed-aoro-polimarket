@@ -89,9 +89,9 @@ export class MockBettingService implements BettingService {
     const ms = this.options.delayMs ?? 300 + Math.round(Math.random() * 500) // 300–800ms
     await delay(ms)
 
-    const cost = order.size * order.price // notional (AC5.2)
+    const cost = order.size // stake amount the user pays = notional (AC5.2)
     const shares = order.size / order.price // AC5.3
-    const fees = computeFees(cost, this.builderConfig, 'taker') // AC5.8
+    const fees = computeFees(cost, this.builderConfig, 'taker') // AC5.8 (recorded, not shown in UI)
 
     return {
       status: 'filled',
