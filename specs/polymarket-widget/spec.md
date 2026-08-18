@@ -1,8 +1,8 @@
 # Spec — Polymarket Widget
 
 > Status: **draft** · Feature: `polymarket-widget` · Single-page Vue 3 + TypeScript widget
-> Source of truth: [`docs/analysis-and-architecture.md`](../../docs/analysis-and-architecture.md) (decisions D1–D9)
-> Research: [Polymarket API](../../docs/research-polymarket-api.md) · [OpenRouter AI](../../docs/research-openrouter-ai.md) · [RamosLabs DS](../../docs/research-ramoslabs-ds.md)
+> Source of truth: [`docs/analysis-and-architecture.md`](../../docs/analysis-and-architecture.md) (decisions D1–D12)
+> Research: [Polymarket API](../../docs/research-polymarket-api.md) · [Polymarket product/embeds](../../docs/research-polymarket-product.md) · [Polymarket SDKs/builder](../../docs/research-polymarket-sdks-builder.md) · [OpenRouter AI](../../docs/research-openrouter-ai.md) · [RamosLabs DS](../../docs/research-ramoslabs-ds.md)
 
 ---
 
@@ -10,7 +10,7 @@
 
 ### 1.1 What this is
 
-A **single-page widget** that lets a user **search Polymarket prediction markets**, **browse** a default list, **open a market** to see its outcomes and prices, **place a (simulated) bet**, **track positions**, and optionally request an **AI-assisted prediction**. All browser I/O (`fetch`) is encapsulated behind a **service layer**; all UI/UX is built exclusively from the **RamosLabs Design System** tokens and documented patterns.
+A **single-page, custom Polymarket-style SPA** (D10 — not the official read-only embed, not a blind reconstruction) that lets a user **search Polymarket prediction markets**, **browse** a default list, **open a market** to see its outcomes and prices, **place a builder-aware simulated bet** (mock by default, showing the real builder/platform fee breakdown — D11), **track positions**, and optionally request an **AI-assisted suggestion for choosing a market and an outcome**. A real CLOB order path lives behind the same `BettingService` interface as an opt-in, gated stretch capability (D12). All browser I/O (`fetch`) is encapsulated behind a **service layer**; all UI/UX is built exclusively from the **RamosLabs Design System** tokens and documented patterns.
 
 ### 1.2 Scope
 
@@ -21,13 +21,16 @@ Everything lives on **one page** (`App.vue`) with a vertical, mobile-first layou
 | Ref | Decision |
 |---|---|
 | D1 | **Market reads are REAL** via Polymarket Gamma API (`https://gamma-api.polymarket.com`) — public, no auth, CORS `*`. |
-| D2 | **Betting is SIMULATED (mock)** behind a `BettingService` interface. Real on-chain order placement is out of scope; the interface is swappable for a future real implementation. |
+| D2 | **Betting is MOCK by default** behind a `BettingService` interface. The reason to mock is **operational, not technical** (corrected): charging a builder fee / attributing volume needs only the `bytes32` `builder` field on the user-signed order — **no backend, no builder secret**. The demo mocks because of **geoblock by IP on `POST /order` (33 countries, incl. US/UK), a ToS ban on VPN circumvention, and the need for a funded USDC wallet + approvals**. The brief confirms a VPN may be required even for reads. The deliverable is a GitHub repo, not a funded real-bet demo. |
 | D3 | **Prices are Gamma snapshots** (`outcomePrices`) for the MVP. Live CLOB `/price` quoting is a deferred enhancement, not built now. |
 | D4 | **AI is opt-in** via OpenRouter free models; the API key is **user-supplied** in Settings and stored in `localStorage`. No key is ever bundled. |
 | D5 | AI model is **discovered at runtime** with a preference/fallback chain (`z-ai/glm-5.2:free` → `nvidia/nemotron-3-ultra-550b-a55b:free` → `openai/gpt-oss-20b:free` → `openrouter/free`). |
 | D6 | **Light theme only.** The DS ships no dark mode; no dark tokens are invented. |
 | D7–D8 | **Custom components only**, `SJ`/`W` naming, **token-only**, and they MUST follow **all** DS guidelines (not just tokens). |
 | D9 | **Mobile-first under the DS's own conditions**: base = 0, five `min-width` breakpoints, thumb-zone ergonomics, touch ≥24×24 (aim 44×44), inputs ≥16px. |
+| D10 | **"Widget" = custom Polymarket-style SPA** (this build); the **official read-only embed is rejected** (display-only iframe: no in-frame betting, single-market only, no builder-volume attribution), and it is **not a blind reconstruction**. Reads are real via Gamma. |
+| D11 | **Mock bet is genuinely "builder-aware"**: the `BettingService` carries the configurable **builderCode (`bytes32`)** and shows the **real fee breakdown** — notional, platform fee, and **additive** builder fee (taker ≤100 bps / maker ≤50 bps), via `fee = notional × bps / 10000` — surfaced **before confirmation** (builder obligation: disclose total cost before signing). |
+| D12 | **A real CLOB order path is implemented behind the same `BettingService` interface as an opt-in, gated stretch capability.** It uses `@polymarket/client` (V2 TS SDK) with a browser **viem** signer, signs L1 (`ClobAuth`) + V2 Order struct with the `builder` field, derives the user's L2 creds, and `POST /order`s to the CLOB **with no backend** for attribution. It exists in code (swappable) but is **gated behind a flag/config** and **never runs in the demo** (geoblock, funded wallet + approvals, possible Verified tier). |
 | Stack | Vue 3 (`<script setup>`, Composition API) + Vite + **TypeScript** + Pinia + `@ramoslabs/tokens`. Testing: **Vitest unit + 1 Playwright E2E** (search → bet). |
 
 ### 1.4 Glossary
@@ -35,6 +38,9 @@ Everything lives on **one page** (`App.vue`) with a vertical, mobile-first layou
 - **Market** — a Polymarket question with a set of mutually exclusive **outcomes** (e.g. `["Yes","No"]`), each carrying an **outcomePrice** in `[0,1]` interpreted as an implied probability.
 - **Position** — a simulated bet the user has placed, persisted locally.
 - **Snapshot price** — the `outcomePrices` value returned by Gamma at fetch time (not a live CLOB quote).
+- **builderCode** — a `bytes32` identifier of a Polymarket builder account, carried in the `builder` field of a signed V2 order to attribute volume/fees. Public (not a secret); configurable here with a placeholder default.
+- **Builder fee** — a flat % of notional a builder may charge (taker ≤100 bps, maker ≤50 bps), **additive** to the platform fee; `fee = notional × bps / 10000`.
+- **Notional** — the bet's cost basis (size × price) on which fees are computed.
 
 ---
 
@@ -52,17 +58,21 @@ Everything lives on **one page** (`App.vue`) with a vertical, mobile-first layou
 ### Capability C — View market detail
 - **US4** — As a user, I want to open a market and see its outcomes, prices (as %), and volume/liquidity, so I can understand the market before betting.
 
-### Capability D — Place a bet (simulated)
-- **US5** — As a user, I want to place a simulated bet on a chosen outcome with a chosen amount and see the cost and potential payout, so I can experience the betting flow without real funds.
+### Capability D — Place a bet (simulated, builder-aware)
+- **US5** — As a user, I want to place a simulated bet on a chosen outcome with a chosen amount and see the cost, the real builder/platform **fee breakdown**, and the potential payout, so I can experience a builder-aware betting flow without real funds. The receipt records the builderCode that a real order would carry.
 
 ### Capability E — View positions
 - **US6** — As a user, I want to see my placed (simulated) positions persisted across reloads, so I can track what I have "bet" on.
 
-### Capability F — AI-assisted prediction (bonus)
-- **US7** — As a user with an OpenRouter key, I want an on-demand AI suggestion for a market (recommended outcome + confidence + rationale), so I can get a data-grounded second opinion.
+### Capability F — AI-assisted suggestions (bonus)
+- **US7** — As a user with an OpenRouter key, I want an on-demand AI suggestion for a market (recommended outcome + confidence + rationale), so I can get a data-grounded second opinion on **which outcome** to pick.
+- **US9** — As a user with an OpenRouter key, I want an on-demand AI suggestion over the current market list/search results recommending **which market** is most attractive (recommended market + confidence + rationale), so the AI assists in *choosing a market* as well as an outcome (per the brief: "assist in choosing a market and outcome").
 
 ### Capability G — Settings (AI key)
 - **US8** — As a user, I want to enter and manage my OpenRouter API key in Settings, so the optional AI feature can be enabled or disabled by me.
+
+### Capability H — Real order path (opt-in, gated stretch)
+- **US10** — As an advanced/opt-in user, I want a real CLOB order path implemented behind the same `BettingService` interface (builder-code attribution, browser wallet signing, no backend) that is **disabled by default and gated by config**, so the widget demonstrates a real path without ever submitting a real order in the demo.
 
 ---
 
@@ -174,7 +184,7 @@ IF the selected market is closed or inactive, THEN THE SYSTEM SHALL indicate it 
 
 <a id="ac5-1"></a>
 **AC5.1** (Complex, happy)
-WHILE an outcome is selected and a valid amount is entered, WHEN the user submits the bet, THE SYSTEM SHALL call `BettingService.placeBet`, produce a simulated filled receipt `{ status:'filled', avgPrice, shares, cost, txHash }`, and add the resulting position to the persisted positions store.
+WHILE an outcome is selected and a valid amount is entered, WHEN the user submits the bet, THE SYSTEM SHALL call `BettingService.placeBet`, produce a simulated filled receipt `{ status:'filled', avgPrice, shares, cost, fees, builderCode, txHash }`, and add the resulting position to the persisted positions store.
 
 <a id="ac5-2"></a>
 **AC5.2** (Ubiquitous, cost math)
@@ -200,6 +210,14 @@ WHEN a bet is filled, THE SYSTEM SHALL surface a receipt/confirmation (toast) vi
 **AC5.7** (Unwanted-behavior, service failure)
 IF `BettingService.placeBet` rejects (validation or simulated failure), THEN THE SYSTEM SHALL show an error state, leave the positions store unchanged, and allow the user to retry.
 
+<a id="ac5-8"></a>
+**AC5.8** (Ubiquitous, fee breakdown)
+THE SYSTEM SHALL compute and display, **before the user confirms the bet**, a fee breakdown consisting of the **notional** (= cost), the **platform fee**, and the **additive builder fee**, where each fee is computed as `fee = notional × bps / 10000` and the builder rate is `builderTakerBps` (≤ 100) or `builderMakerBps` (≤ 50) per the order side, plus the resulting **total cost** (notional + platform fee + builder fee). Builder and platform fees are additive; a zero platform fee SHALL NOT suppress a configured builder fee.
+
+<a id="ac5-9"></a>
+**AC5.9** (Ubiquitous, builderCode in receipt)
+THE SYSTEM SHALL include the configured **builderCode (`bytes32`)** and the computed fee breakdown in the bet receipt and the persisted position, reflecting the `builder` field a real signed order would carry. The builderCode SHALL be sourced from configuration (env/settings) with a placeholder default and SHALL NEVER be a real hardcoded value committed to source.
+
 ---
 
 ### US6 — View positions
@@ -210,7 +228,7 @@ THE SYSTEM SHALL persist positions in `localStorage` and restore them on load so
 
 <a id="ac6-2"></a>
 **AC6.2** (Ubiquitous, content)
-THE SYSTEM SHALL display each position with its market question, chosen outcome, size, price, cost, shares, and potential payout.
+THE SYSTEM SHALL display each position with its market question, chosen outcome, size, price, cost, shares, potential payout, the builder/platform fee breakdown, and the builderCode recorded on the receipt.
 
 <a id="ac6-3"></a>
 **AC6.3** (State-driven, empty)
@@ -266,6 +284,36 @@ IF `recommendedOutcome` does not match any provided outcome label after the sing
 
 ---
 
+### US9 — AI-assisted market pick (bonus)
+
+> This capability assists the user in *choosing a market* (over the current list/search results), complementing US7's outcome pick — together they satisfy the brief's "assist in choosing a market and outcome". It reuses the model-discovery and structured-output ladder defined for US7 (AC7.4–AC7.5).
+
+<a id="ac9-1"></a>
+**AC9.1** (Optional, gated on key)
+WHERE a valid OpenRouter API key is present in settings, THE SYSTEM SHALL enable an "AI: pick a market" action over the current market list / search results; WHILE no key is configured, THE SYSTEM SHALL disable/hide it and present the same Settings CTA as AC7.2 rather than calling the API.
+
+<a id="ac9-2"></a>
+**AC9.2** (Event-driven, on-demand only)
+WHEN — and only when — the user explicitly activates the "AI: pick a market" action, THE SYSTEM SHALL send exactly one recommendation request over the currently visible markets; THE SYSTEM SHALL NOT call the AI automatically on load, search, scroll, or selection (respecting the free tier's 20 req/min cap).
+
+<a id="ac9-3"></a>
+**AC9.3** (Ubiquitous, output validation)
+THE SYSTEM SHALL validate the parsed recommendation: `recommendedMarketId` MUST be one of the IDs of the markets currently presented to the model, and `confidence` MUST be clamped to `[0,1]`; `rationale` length is capped for display.
+
+<a id="ac9-4"></a>
+**AC9.4** (State-driven, loading)
+WHILE a market-pick request is in flight, THE SYSTEM SHALL show a loading state and announce it via a polite live region.
+
+<a id="ac9-5"></a>
+**AC9.5** (Ubiquitous, render + confidence signal)
+THE SYSTEM SHALL render the result by identifying the recommended market (e.g. highlighting its card and/or naming its question), a confidence signal pairing color with a numeric label (never color alone), and the rationale text, alongside a "not financial advice" disclaimer.
+
+<a id="ac9-6"></a>
+**AC9.6** (Unwanted-behavior, error/invalid)
+IF the request fails, is rate-limited, or `recommendedMarketId` does not match any presented market after the single retry, THEN THE SYSTEM SHALL show an error state with a retry affordance and MUST NOT surface a fabricated or unvalidated market recommendation as if it were valid.
+
+---
+
 ### US8 — Settings (AI key)
 
 <a id="ac8-1"></a>
@@ -290,6 +338,32 @@ WHILE the Settings form is shown, THE SYSTEM SHALL use a persistent visible `<la
 
 ---
 
+### US10 — Real order path (opt-in, gated stretch)
+
+> A real CLOB order path implemented behind the **same** `BettingService` interface as the mock. It exists in code to demonstrate the real flow but is disabled by default; it MUST NOT submit a real order in the demo. See D12.
+
+<a id="ac10-1"></a>
+**AC10.1** (Ubiquitous, same interface)
+THE SYSTEM SHALL implement the real order path (`ClobBettingService`) behind the **same** `BettingService` interface as `MockBettingService`, sharing the `placeBet(o: BetOrder): Promise<BetReceipt>` signature and the same fee-breakdown computation, so the two are swappable at a single wiring point.
+
+<a id="ac10-2"></a>
+**AC10.2** (Optional, config-gated, disabled by default)
+WHERE — and only where — an explicit build/runtime config flag opts into the real path, THE SYSTEM SHALL wire `ClobBettingService`; by default (flag absent) THE SYSTEM SHALL use `MockBettingService`, and no real order path SHALL be reachable in the demo.
+
+<a id="ac10-3"></a>
+**AC10.3** (Ubiquitous, browser-only signing, no backend)
+WHERE the real path is enabled, THE SYSTEM SHALL sign the L1 `ClobAuth` and the V2 Order struct (including the `builder` = configured builderCode field) with a browser wallet signer (viem via `window.ethereum`/WalletConnect), derive the user's L2 credentials, and `POST /order` to the CLOB directly, using **no backend** for builder-code attribution and never transmitting a builder secret from the client.
+
+<a id="ac10-4"></a>
+**AC10.4** (Ubiquitous, gating disclosure)
+THE SYSTEM SHALL document, and surface where the real path is enabled, that real submission is blocked by **geoblock (33 countries, incl. US/UK) checked on every `POST /order`**, requires a **funded USDC wallet with ERC-20/1155 approvals**, and may require a **Verified builder tier** — and that VPN/geoblock circumvention is out of scope (ToS-prohibited).
+
+<a id="ac10-5"></a>
+**AC10.5** (Unwanted-behavior, disclose before sign)
+IF the real path is enabled and an order is about to be signed, THEN THE SYSTEM SHALL present the full fee breakdown (builder + platform, per AC5.8) **before** requesting the signature, honoring the builder obligation to disclose total cost prior to signing.
+
+---
+
 ## 4. Acceptance criteria (Given / When / Then summary)
 
 > These restate the testable core of each story in Given/When/Then form; the authoritative, atomic criteria are the EARS ACs in §3.
@@ -298,10 +372,12 @@ WHILE the Settings form is shown, THE SYSTEM SHALL use a persistent visible `<la
 - **US2 — Search.** Given text in the search box, When input settles after debounce, Then at most one request runs and results/empty/loading/error states render correctly (AC2.1–AC2.6).
 - **US3 — Browse.** Given a fresh load with no query, When the page mounts, Then top-by-volume active markets render with skeletons while loading and an explicit empty/error state otherwise (AC3.1–AC3.5).
 - **US4 — Detail.** Given a market card, When selected, Then the detail opens with outcomes signalled by triad+text, selection drives the bet form, and focus returns on close (AC4.1–AC4.5).
-- **US5 — Bet.** Given a selected outcome and a valid amount, When the user submits, Then cost = size×price and payout = (size/price)×$1 are shown live, a simulated receipt is produced, the position persists, and invalid input/no-outcome/service-failure are blocked with specific feedback (AC5.1–AC5.7).
-- **US6 — Positions.** Given placed bets, When the page reloads, Then positions restore from `localStorage`; an empty first-run state shows when none exist; corrupt storage recovers to empty (AC6.1–AC6.4).
-- **US7 — AI.** Given a configured key, When the user explicitly requests a suggestion, Then exactly one request runs, the model is discovered at runtime, output is parsed via the ladder and validated (`recommendedOutcome` ∈ outcomes, confidence clamped), rendered with a numeric confidence signal + disclaimer, and failures show retry without surfacing invalid results (AC7.1–AC7.10).
+- **US5 — Bet (builder-aware).** Given a selected outcome and a valid amount, When the user submits, Then cost = size×price and payout = (size/price)×$1 are shown live, the additive builder/platform fee breakdown (`fee = notional × bps / 10000`) is shown before confirmation, a simulated receipt carrying the fees + builderCode is produced, the position persists, and invalid input/no-outcome/service-failure are blocked with specific feedback (AC5.1–AC5.9).
+- **US6 — Positions.** Given placed bets, When the page reloads, Then positions restore from `localStorage` with their fee breakdown + builderCode; an empty first-run state shows when none exist; corrupt storage recovers to empty (AC6.1–AC6.4).
+- **US7 — AI outcome pick.** Given a configured key, When the user explicitly requests an outcome suggestion, Then exactly one request runs, the model is discovered at runtime, output is parsed via the ladder and validated (`recommendedOutcome` ∈ outcomes, confidence clamped), rendered with a numeric confidence signal + disclaimer, and failures show retry without surfacing invalid results (AC7.1–AC7.10).
+- **US9 — AI market pick.** Given a configured key, When the user explicitly requests a market recommendation over the visible list, Then exactly one request runs, output is validated (`recommendedMarketId` ∈ presented markets, confidence clamped), the recommended market is identified with a numeric confidence signal + disclaimer, and failures/invalid results show retry without fabrication (AC9.1–AC9.6).
 - **US8 — Settings.** Given the Settings form, When the user saves/clears a key, Then it is persisted/removed in `localStorage`, the AI feature toggles accordingly, the disclaimer shows, no key is ever bundled, and the field follows DS form conventions (AC8.1–AC8.5).
+- **US10 — Real order path (opt-in, gated).** Given the same `BettingService` interface, When the config flag opts in, Then `ClobBettingService` signs L1+Order (with the `builder` field) via a browser wallet and `POST /order`s with no backend; by default it is disabled and the mock is used; gating (geoblock, funded wallet, Verified tier) is disclosed, and the fee breakdown is shown before signing (AC10.1–AC10.5).
 
 ---
 
@@ -403,6 +479,14 @@ THE SYSTEM SHALL show the "stored locally, sent directly to OpenRouter" disclaim
 **NFR-SEC-3** (Ubiquitous, no secrets for reads)
 THE SYSTEM SHALL perform all Polymarket reads as public unauthenticated GETs — no API keys, secrets, or `.env` values are required or used for the real read path (D1).
 
+<a id="nfr-sec-4"></a>
+**NFR-SEC-4** (Ubiquitous, builderCode configurable, not hardcoded)
+THE SYSTEM SHALL treat the **builderCode (`bytes32`)** as configuration (env/settings) with a placeholder default; it is **not a security secret** (it travels publicly inside the signed order) but it MUST be replaceable and MUST NEVER be committed as a real value in source. No builder **secret** (the builder API key used for gasless relayer/wallet creation) is ever present in the client (D11, D12).
+
+<a id="nfr-sec-5"></a>
+**NFR-SEC-5** (Ubiquitous, geoblock + ToS disclaimer)
+THE SYSTEM SHALL disclose that real order submission is subject to Polymarket's **geoblock by IP** (33 countries incl. US/UK, checked on every `POST /order`) and requires a funded wallet, and that the widget does **not** circumvent geo-restrictions (VPN bypass is ToS-prohibited and out of scope). The default (mock) flow performs no order submission.
+
 ### 5.6 Services & resilience
 
 <a id="nfr-svc-1"></a>
@@ -414,14 +498,14 @@ THE SYSTEM SHALL route all browser I/O (`fetch`) through the service layer (`htt
 IF a network returns a CORS/opaque failure from Gamma, THEN the widget SHALL be operable via a Vite dev proxy without any change to the service-layer call sites.
 
 <a id="nfr-svc-3"></a>
-**NFR-SVC-3** (Ubiquitous, betting behind interface)
-THE SYSTEM SHALL keep betting behind the `BettingService` interface with `MockBettingService` as the only implementation shipped, sharing the same signature a future real (CLOB) implementation would use (D2).
+**NFR-SVC-3** (Ubiquitous, betting behind one interface, mock and real)
+THE SYSTEM SHALL keep betting behind the `BettingService` interface, with **`MockBettingService` as the default and only implementation active in the demo** and `ClobBettingService` (the real CLOB path) implemented behind the **same** signature and selected only via explicit config (D11, D12, US10). Components and stores SHALL depend on the interface, never on a concrete implementation, so the two are swappable at a single wiring point.
 
 ### 5.7 Testing
 
 <a id="nfr-test-1"></a>
 **NFR-TEST-1** (Ubiquitous, unit coverage)
-THE SYSTEM SHALL cover with Vitest unit tests at minimum: market normalization (AC1.*), bet cost/payout math (AC5.2–AC5.3), position persistence (AC6.*), and the AI parse/validate ladder (AC7.5–AC7.6, AC7.10).
+THE SYSTEM SHALL cover with Vitest unit tests at minimum: market normalization (AC1.*), bet cost/payout math (AC5.2–AC5.3), the additive builder/platform fee breakdown math (AC5.8, `fee = notional × bps / 10000`), position persistence (AC6.*), and the AI parse/validate ladder for both outcome and market picks (AC7.5–AC7.6, AC7.10, AC9.3, AC9.6).
 
 <a id="nfr-test-2"></a>
 **NFR-TEST-2** (Ubiquitous, E2E)
@@ -431,11 +515,12 @@ THE SYSTEM SHALL include one Playwright E2E covering the primary flow: search a 
 
 ## 6. Out of scope
 
-The following are explicitly **not** built in this feature:
+The following are explicitly **not** run/built in this feature's default demo:
 
-- **Real on-chain order placement** (CLOB `POST /order`, EIP-712 signing, L1/L2 HMAC auth, USDC allowances). Betting is mock-only.
-- **Wallet integration** (MetaMask/WalletConnect, funded Polygon wallet).
-- **VPN / geoblock bypass** — the deliverable is not designed around circumventing Polymarket's geo-restrictions (ToS §2.1.4); only global read endpoints and mock bets are used.
+- **Real on-chain order placement as the default flow** — betting is **mock by default**. NOTE (changed): the real CLOB path (`ClobBettingService`: `POST /order`, EIP-712 L1 `ClobAuth` + V2 Order signing, browser wallet, `builder`-field attribution) **is implemented behind the same interface as an opt-in, config-gated stretch** (US10, D12) — it is **not executed in the demo**, not "not built".
+- **Funding a wallet, USDC/pUSD balances, and ERC-20/1155 approvals** — required only for the opt-in real path; never part of the default demo. The demo assumes no funded wallet.
+- **Gasless relayer / builder-secret backend** — the builder API secret (relayer, Safe/Deposit-wallet creation) stays out of the client; no backend is built. Attribution needs only the public `builder` field.
+- **VPN / geoblock bypass** — the deliverable is not designed around circumventing Polymarket's geo-restrictions (ToS-prohibited); the brief notes a VPN may be needed even for reads, but the widget itself never bypasses geoblock. Only global read endpoints and mock bets run by default.
 - **Dark mode** — the DS ships no dark palette (D6).
 - **Real-time live CLOB pricing** (`/book`, `/price`, `/prices-history` live quoting and price charts) — deferred enhancement; MVP uses Gamma `outcomePrices` snapshots (D3).
 - **Server-side AI proxy** (Approach C) — documented as the production path but not implemented; the challenge uses the user-supplied-key approach (D4).
@@ -451,8 +536,8 @@ The following are explicitly **not** built in this feature:
 |---|---|
 | AC2.*, AC3.*, AC4.* | `polymarket.service.ts` — `searchMarkets(q)` (Gamma `/public-search`), `getMarkets(filters)` (`/markets`), `getMarket(idOrSlug)`; `normalizeMarket(raw)` performs AC1.* parsing. |
 | AC1.* | `models/market.ts` — normalized `Market { id, question, slug, outcomes[], prices[], tokenIds[], volume, liquidity, endDate, image, active, closed }`. |
-| AC5.*, AC6.* | `betting.service.ts` — `interface BettingService { placeBet(o: BetOrder): Promise<BetReceipt> }`, `MockBettingService`; `models/bet.ts` — `BetOrder`, `BetReceipt`, `Position`; persisted via `stores/bets.store.ts` (localStorage). |
-| AC7.*, AC8.* | `openrouter.service.ts` — `pickFreeModel(apiKey)`, `predict(market, apiKey)` with the parse ladder + validation; `models/prediction.ts` — `AiPrediction { recommendedOutcome, confidence, rationale }`; key in `stores/settings.store.ts`. |
+| AC5.*, AC6.*, AC10.* | `betting.service.ts` — `interface BettingService { placeBet(o: BetOrder): Promise<BetReceipt> }`; `MockBettingService` (default, builder-aware) + `ClobBettingService` (opt-in, config-gated, `@polymarket/client` + viem signer) behind the same interface; shared `computeFees(notional, builderConfig)` (additive builder/platform, `notional×bps/10000`); `models/bet.ts` — `BetOrder`, `BetReceipt { …, fees, builderCode }`, `FeeBreakdown`, `Position`; builderCode from config (placeholder default); persisted via `stores/bets.store.ts` (localStorage). |
+| AC7.*, AC9.*, AC8.* | `openrouter.service.ts` — `pickFreeModel(apiKey)`, `predictOutcome(market, apiKey)` and `recommendMarket(markets, apiKey)` with the shared parse ladder + validation; `models/prediction.ts` — `AiPrediction { recommendedOutcome, confidence, rationale }`, `AiMarketPick { recommendedMarketId, confidence, rationale }`; key in `stores/settings.store.ts`. |
 | NFR-SVC-1, NFR-SVC-2 | `http.ts` — fetch wrapper (base URL, timeout, error normalization, retry); Vite dev proxy as CORS fallback. |
 
 ### 7.2 Folder architecture (from the analysis doc §4)
@@ -461,4 +546,4 @@ Stores (`markets.store.ts`, `bets.store.ts`, `settings.store.ts`), composables (
 
 ### 7.3 UX mapping (from the analysis doc §6)
 
-Header + Settings entry (US8) → Search bar `WMarketSearch` (US2) → Results `WMarketList`/`WMarketCard` (US3) → Detail `WMarketDetail` (US4) → `WBetForm` + `WBetReceipt` (US5) → `WPositions` (US6) → `WAiPrediction` opt-in inside detail (US7).
+Header + Settings entry (US8) → Search bar `WMarketSearch` (US2) → Results `WMarketList`/`WMarketCard` (US3) with an opt-in "AI: pick a market" action over the list (US9) → Detail `WMarketDetail` (US4) → `WBetForm` (with builder/platform fee breakdown, US5) + `WBetReceipt` (fees + builderCode, US5) → `WPositions` (US6) → `WAiPrediction` opt-in inside detail for outcome pick (US7). The bet path is wired to `BettingService`; the opt-in real `ClobBettingService` (US10) swaps in only via config, never in the demo.
