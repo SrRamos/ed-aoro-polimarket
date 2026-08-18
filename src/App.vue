@@ -2,12 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { Market } from './models/market'
-import type { BetOrder, Position } from './models/bet'
+import type { BetOrder } from './models/bet'
 import type { AiPrediction, AiMarketPick } from './models/prediction'
 import type { ViewStatus } from './lib/status'
-import { AI_PREDICTIONS, AI_MARKET_PICK } from './fixtures/markets'
 import { useMarketsStore } from './stores/markets.store'
-import { computeFees, DEMO_BUILDER_CONFIG } from './lib/fees'
+import { useBetsStore } from './stores/bets.store'
+import { useSettingsStore } from './stores/settings.store'
+import { getBuilderConfig } from './config/builder.config'
+import { predictOutcome, recommendMarket } from './services/openrouter.service'
 import WMarketSearch from './components/widget/WMarketSearch.vue'
 import WMarketList from './components/widget/WMarketList.vue'
 import WMarketDetail from './components/widget/WMarketDetail.vue'
@@ -19,17 +21,30 @@ import SJButton from './components/ui/SJButton.vue'
 import SJBadge from './components/ui/SJBadge.vue'
 
 /* ---------------------------------------------------------------- *
- * Market data (search / browse / detail source) now comes from the
- * Pinia markets store, which reads the REAL Polymarket Gamma API and
- * degrades gracefully to fixtures if the network is unreachable.
- * Betting stays MOCK; the AI panels stay canned. Components remain
- * props-driven — only the data source changed.
+ * Wave 2: betting and AI are now REAL services behind Pinia stores.
+ *  - Market data → markets store (real Gamma read, fixture fallback).
+ *  - Betting → bets store → MockBettingService (builder-aware), positions
+ *    persisted to localStorage.
+ *  - AI → openrouter.service (REAL OpenRouter call, gated by the user key).
+ *  - Settings/key → settings store, persisted to localStorage.
+ * Widgets keep the same props/events — only the wiring changed.
  * ---------------------------------------------------------------- */
 
-const builderConfig = DEMO_BUILDER_CONFIG
-
 const marketsStore = useMarketsStore()
+const betsStore = useBetsStore()
+const settingsStore = useSettingsStore()
 const { usingFallback } = storeToRefs(marketsStore)
+const { positions } = storeToRefs(betsStore)
+const { openRouterKey } = storeToRefs(settingsStore)
+
+/** Builder/fee config resolved from env/settings (placeholder default). */
+const builderConfig = computed(() =>
+  getBuilderConfig(
+    settingsStore.builderCodeOverride
+      ? { builderCode: settingsStore.builderCodeOverride }
+      : undefined,
+  ),
+)
 
 /* --- Dev demo controls (audit aid; kept out of the main look) --- */
 type DemoState = 'auto' | 'loading' | 'empty' | 'error'
@@ -92,11 +107,9 @@ function closeDetail() {
   detailOpen.value = false
 }
 
-/* --- Bet placement (simulated) --- */
+/* --- Bet placement (real MockBettingService via the bets store) --- */
 const submitting = ref(false)
 const betError = ref<string | null>(null)
-const positions = ref<Position[]>([])
-let betTimer: ReturnType<typeof setTimeout> | undefined
 
 /* --- Receipt toast --- */
 const receiptVisible = ref(false)
@@ -106,50 +119,35 @@ const receiptTotal = ref(0)
 const receiptTx = ref('')
 let receiptTimer: ReturnType<typeof setTimeout> | undefined
 
-function placeBet(order: BetOrder) {
+async function placeBet(order: BetOrder) {
+  const market = selectedMarket.value
+  if (!market) return
   submitting.value = true
   betError.value = null
-  if (betTimer) clearTimeout(betTimer)
-  betTimer = setTimeout(() => {
-    submitting.value = false
-    const market = selectedMarket.value
-    if (!market) return
-    const cost = order.size * order.price
-    const fees = computeFees(cost, builderConfig, 'taker')
-    const shares = order.price > 0 ? order.size / order.price : 0
-    const txHash = `mock-0x${Math.random().toString(16).slice(2, 10)}${Date.now().toString(16)}`
-    const position: Position = {
-      id: `${market.id}-${Date.now()}`,
-      marketId: market.id,
+  try {
+    const position = await betsStore.placeBet(order, {
       marketQuestion: market.question,
-      outcome: order.outcome,
-      order,
-      receipt: {
-        status: 'filled',
-        avgPrice: order.price,
-        shares,
-        cost,
-        fees,
-        builderCode: builderConfig.builderCode,
-        txHash,
-        filledAt: new Date().toISOString(),
-      },
-      createdAt: new Date().toISOString(),
-    }
-    positions.value = [position, ...positions.value]
+    })
+    const receipt = position.receipt
 
     // Surface the receipt toast + reset the form, then close the detail.
     receiptOutcome.value = order.outcome
     receiptSize.value = order.size
-    receiptTotal.value = fees.total
-    receiptTx.value = txHash
+    receiptTotal.value = receipt.fees.total
+    receiptTx.value = receipt.txHash
     receiptVisible.value = true
     if (receiptTimer) clearTimeout(receiptTimer)
     receiptTimer = setTimeout(() => (receiptVisible.value = false), 6000)
 
     betFormResetKey.value += 1
     detailOpen.value = false
-  }, 650)
+  } catch (err) {
+    // Positions store is left unchanged on failure (AC5.7).
+    betError.value =
+      err instanceof Error ? err.message : 'The bet could not be placed. Please retry.'
+  } finally {
+    submitting.value = false
+  }
 }
 
 function dismissReceipt() {
@@ -157,39 +155,39 @@ function dismissReceipt() {
   if (receiptTimer) clearTimeout(receiptTimer)
 }
 
-/* --- AI outcome suggestion (US7) --- */
+/* --- AI outcome suggestion (US7) — REAL OpenRouter call, gated by the key --- */
 const aiStatus = ref<ViewStatus>('idle')
 const aiPrediction = ref<AiPrediction | null>(null)
 const aiError = ref<string | null>(null)
-let aiTimer: ReturnType<typeof setTimeout> | undefined
 
-function requestAiPrediction() {
+async function requestAiPrediction() {
   const market = selectedMarket.value
-  if (!market || !hasKey.value) return
+  const key = openRouterKey.value
+  if (!market || !key) return
   aiStatus.value = 'loading'
   aiError.value = null
-  if (aiTimer) clearTimeout(aiTimer)
-  aiTimer = setTimeout(() => {
-    if (forceAiError.value) {
-      aiError.value = 'The model was rate-limited (HTTP 429). Please retry.'
-      aiStatus.value = 'error'
-      return
-    }
-    aiPrediction.value =
-      AI_PREDICTIONS[market.id] ?? {
-        recommendedOutcome: market.outcomes[0] ?? '',
-        confidence: 0.5,
-        rationale: 'Insufficient signal; treat as a coin flip.',
-      }
+  aiPrediction.value = null
+
+  // Dev aid: preview the error state without a live model call.
+  if (forceAiError.value) {
+    aiError.value = 'Forced AI error (dev control). Please retry.'
+    aiStatus.value = 'error'
+    return
+  }
+
+  try {
+    aiPrediction.value = await predictOutcome(market, key)
     aiStatus.value = 'success'
-  }, 750)
+  } catch (err) {
+    aiError.value = err instanceof Error ? err.message : 'The AI request failed. Please retry.'
+    aiStatus.value = 'error'
+  }
 }
 
-/* --- AI market pick (US9) --- */
+/* --- AI market pick (US9) — REAL OpenRouter call over the visible list --- */
 const ampStatus = ref<ViewStatus>('idle')
 const ampPick = ref<AiMarketPick | null>(null)
 const ampError = ref<string | null>(null)
-let ampTimer: ReturnType<typeof setTimeout> | undefined
 
 const recommendedMarketId = computed(() =>
   ampStatus.value === 'success' && ampPick.value
@@ -203,24 +201,27 @@ const recommendedQuestion = computed(() => {
     : null
 })
 
-function requestAiMarketPick() {
-  if (!hasKey.value) return
+async function requestAiMarketPick() {
+  const key = openRouterKey.value
+  const markets = displayedMarkets.value
+  if (!key || markets.length === 0) return
   ampStatus.value = 'loading'
   ampError.value = null
-  if (ampTimer) clearTimeout(ampTimer)
-  ampTimer = setTimeout(() => {
-    if (forceAiError.value) {
-      ampError.value = 'The model was rate-limited (HTTP 429). Please retry.'
-      ampStatus.value = 'error'
-      return
-    }
-    const ids = displayedMarkets.value.map((m) => m.id)
-    const chosenId = ids.includes(AI_MARKET_PICK.recommendedMarketId)
-      ? AI_MARKET_PICK.recommendedMarketId
-      : (ids[0] ?? AI_MARKET_PICK.recommendedMarketId)
-    ampPick.value = { ...AI_MARKET_PICK, recommendedMarketId: chosenId }
+  ampPick.value = null
+
+  if (forceAiError.value) {
+    ampError.value = 'Forced AI error (dev control). Please retry.'
+    ampStatus.value = 'error'
+    return
+  }
+
+  try {
+    ampPick.value = await recommendMarket(markets, key)
     ampStatus.value = 'success'
-  }, 750)
+  } catch (err) {
+    ampError.value = err instanceof Error ? err.message : 'The AI request failed. Please retry.'
+    ampStatus.value = 'error'
+  }
 }
 
 function dismissAmp() {
@@ -229,10 +230,9 @@ function dismissAmp() {
   ampError.value = null
 }
 
-/* --- Settings / AI key (in-memory; store persistence is out of UI scope) --- */
+/* --- Settings / AI key (persisted in the settings store) --- */
 const settingsOpen = ref(false)
-const apiKey = ref<string | null>(null)
-const hasKey = computed(() => !!apiKey.value)
+const hasKey = computed(() => !!openRouterKey.value)
 
 function openSettings() {
   settingsOpen.value = true
@@ -242,23 +242,22 @@ function openSettingsFromDetail() {
   settingsOpen.value = true
 }
 function saveKey(key: string) {
-  apiKey.value = key || null
+  settingsStore.saveKey(key)
   settingsOpen.value = false
 }
 function clearKey() {
-  apiKey.value = null
+  settingsStore.clearKey()
   // Reset AI states that depended on the key.
   aiStatus.value = 'idle'
   aiPrediction.value = null
+  aiError.value = null
   dismissAmp()
 }
 
 /* --- Lifecycle --- */
 onMounted(() => marketsStore.loadDefaultList())
 onBeforeUnmount(() => {
-  ;[betTimer, receiptTimer, aiTimer, ampTimer].forEach(
-    (t) => t && clearTimeout(t),
-  )
+  if (receiptTimer) clearTimeout(receiptTimer)
 })
 </script>
 
@@ -350,8 +349,9 @@ onBeforeUnmount(() => {
 
     <footer class="app__footer">
       <p>
-        Demo build · market data is fixture data · bets are simulated (mock
-        <code>BettingService</code>). Not financial advice.
+        Demo build · market data is real (Polymarket Gamma, sample fallback if
+        unreachable) · bets are simulated (mock <code>BettingService</code>) ·
+        AI is opt-in via your OpenRouter key. Not financial advice.
       </p>
     </footer>
   </div>
@@ -379,7 +379,7 @@ onBeforeUnmount(() => {
 
   <WSettings
     :open="settingsOpen"
-    :api-key="apiKey"
+    :api-key="openRouterKey"
     @close="settingsOpen = false"
     @save="saveKey"
     @clear="clearKey"
