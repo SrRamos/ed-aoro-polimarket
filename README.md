@@ -11,13 +11,13 @@ A self-contained, single-page **Polymarket widget** — a mini-app that lets you
 - **Search + browse** — real market data from the public Polymarket **Gamma API** (no auth, CORS `*`). A default list of active markets (top by volume) loads on start; free-text search is debounced.
 - **Market detail** — outcomes with prices as percentages, volume/liquidity, and selectable outcomes.
 - **Builder-aware mock bet** — place a simulated bet on a chosen outcome and amount. The bet is **mock by default** but genuinely builder-aware: it shows the **real fee breakdown** (notional, additive **builder** fee + **platform** fee, `fee = notional × bps / 10000`, builder taker ≤ 100 bps / maker ≤ 50 bps) **before you confirm**, and the receipt records the configured **`builderCode` (bytes32)** a real signed order would carry.
-- **AI prediction (opt-in)** — with your own OpenRouter key you can ask the AI to help **choose a market** (over the visible list) and **choose an outcome** (inside a market): recommended pick + confidence + rationale, one request per explicit click, never automatic. A free model is discovered at runtime.
+- **AI prediction (opt-in)** — a single **Enable AI** toggle lets you ask the AI to help **choose a market** (over the visible list) and **choose an outcome** (inside a market): recommended pick + confidence + rationale, one request per explicit click, never automatic. The OpenRouter **key and model are configured by whoever deploys** (via env vars) — the end user configures nothing. When the toggle is on but no key/model is configured, the widget shows a clearly-labelled **sample** suggestion instead of calling the network.
 - **Persisted positions** — simulated bets are saved to `localStorage` and restored across reloads, with their full fee breakdown and builderCode.
 
 ## Stack & architecture
 
 - **Vue 3** (`<script setup>`, Composition API) + **Vite** + **TypeScript**.
-- **Pinia** stores — markets (browse/search), bets (persisted positions), settings (AI key, builder override).
+- **Pinia** stores — markets (browse/search), bets (persisted positions), settings (`aiEnabled` toggle, builder override). No secrets are stored client-side.
 - **Service layer** — all browser I/O (`fetch`) is encapsulated behind services: `http.ts` (the sole `fetch` caller: timeout, retry, normalized errors), `polymarket.service.ts` (Gamma reads + normalization), `betting.service.ts` (the `BettingService` interface + mock/real implementations), `openrouter.service.ts` (AI). Components and stores never call `fetch` directly.
 - **RamosLabs Design System, token-only** — every color/spacing/type/radius/shadow/motion value comes from `@ramoslabs/tokens`; no raw literals. Custom `SJ*` primitives and `W*` widgets follow the DS's own guidelines (press-first states, visible focus, native-first forms, semantic triads).
 - **Mobile-first** — base styles author for mobile (base = 0), enhanced at the DS breakpoints; touch targets ≥ 24×24, inputs ≥ 16px. Light theme only (the DS ships no dark mode).
@@ -48,8 +48,12 @@ Open the printed local URL. **No environment variables are required** — the de
 | `VITE_BUILDER_CODE`                                                       | builderCode (`bytes32`) carried on the order — public, not a secret, but never commit a real value | all-zero placeholder               |
 | `VITE_BUILDER_TAKER_BPS` / `VITE_BUILDER_MAKER_BPS` / `VITE_PLATFORM_BPS` | fee rates                                                                                          | `100` / `50` / `0`                 |
 | `VITE_ENABLE_REAL_ORDERS`                                                 | opt into the gated real-order path (stub in this build; never submits)                             | unset (mock)                       |
+| `VITE_OPENROUTER_API_KEY`                                                 | OpenRouter API key for AI suggestions (set by whoever deploys)                                     | unset (AI shows sample)            |
+| `VITE_OPENROUTER_MODEL`                                                   | OpenRouter model id for AI suggestions (e.g. `z-ai/glm-5.2:free`)                                  | unset (AI shows sample)            |
 
-The OpenRouter AI key is **not** an env var — it is entered by the user at runtime in Settings.
+The end user does **not** configure AI — they only flip an **Enable AI** toggle. The key and model come from `VITE_OPENROUTER_API_KEY` / `VITE_OPENROUTER_MODEL`, set at deploy time. Both must be present for real AI calls; otherwise the toggle shows a labelled sample suggestion with no network call.
+
+> ⚠️ **Security note:** `VITE_*` vars are inlined into the **client bundle at build time**, so in a public deploy the OpenRouter key is exposed to anyone who inspects the shipped JS. For production the correct pattern is a **backend proxy** that holds the key server-side and forwards requests; the browser then talks to your proxy, never to OpenRouter directly. The key lives in a gitignored `.env` and is never committed. See [`docs/security-review.md`](./docs/security-review.md).
 
 ## Key decisions
 
@@ -73,7 +77,7 @@ npm run format:check   # verify formatting (CI gate)
 
 ## Security
 
-- **AI key is user-supplied.** The OpenRouter key is entered at runtime, stored only in `localStorage`, and sent **only** in the `Authorization` header of the OpenRouter request — never placed in a URL, never logged, never bundled. No key is committed to source or shipped in the build; the only key ever used is the user's own.
+- **AI key is deploy-time env config.** The OpenRouter key comes from `VITE_OPENROUTER_API_KEY` and is sent **only** in the `Authorization` header of the OpenRouter request — never placed in a URL, never logged, never persisted to `localStorage`. It is never committed to source (it lives in a gitignored `.env`). **Caveat, stated honestly:** because `VITE_*` vars are inlined into the client bundle at build time, a public build exposes the key in the shipped JS. That is acceptable for a local/demo build with a free-tier key, but **production must front OpenRouter with a backend proxy** so the key never reaches the browser. The end user only toggles AI on/off — they never see or supply a key.
 - **No secrets for reads.** All Polymarket reads are public unauthenticated GETs — no API key or `.env` secret is required or used.
 - **`builderCode` is configurable, not secret.** It travels publicly inside a signed order, so it is treated as configuration with an all-zero placeholder default and is never committed as a real value. No builder **secret** (the relayer/gasless API key) is ever present in the client.
 

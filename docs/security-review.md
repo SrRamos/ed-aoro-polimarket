@@ -1,37 +1,41 @@
 # Security Review — Polymarket Widget
 
-> Read-only verification of the widget's secret-handling and read-path posture against the spec's security NFRs (NFR-SEC-1…5, AC8.3/AC8.4). Scope: `src/`, config, and env handling. **Result: no violations found.**
+> Read-only verification of the widget's secret-handling and read-path posture against the spec's security NFRs (NFR-SEC-1…5, AC8.3/AC8.4). Scope: `src/`, config, and env handling.
+>
+> **Model change (2026-08):** AI config moved from _user-supplied at runtime_ to _deploy-time env config_ (`VITE_OPENROUTER_API_KEY`, `VITE_OPENROUTER_MODEL`); the end user only flips an **Enable AI** toggle. This changes the posture of NFR-SEC-1: the key is **no longer bundle-free** — `VITE_*` vars are inlined into the client bundle at build time, so a public build exposes the key. This is documented honestly below with the production mitigation (a backend proxy). All other invariants still hold.
 
 ## Summary
 
-| #   | Claim verified                                                                    | Result | Evidence                                  |
-| --- | --------------------------------------------------------------------------------- | ------ | ----------------------------------------- |
-| 1   | AI key travels only in the `Authorization` header — never in a URL, never logged  | PASS   | `openrouter.service.ts`                   |
-| 2   | No API key is bundled, hardcoded, or committed                                    | PASS   | repo-wide grep                            |
-| 3   | `builderCode` is configurable (not a secret), placeholder default                 | PASS   | `config/builder.config.ts`, `lib/fees.ts` |
-| 4   | Polymarket reads use no secrets                                                   | PASS   | `polymarket.service.ts`, `.env.example`   |
-| 5   | All `fetch` is funneled through `http.ts` (single caller, no header/body logging) | PASS   | repo-wide grep, `http.ts`                 |
+| #   | Claim verified                                                                    | Result   | Evidence                                  |
+| --- | --------------------------------------------------------------------------------- | -------- | ----------------------------------------- |
+| 1   | AI key travels only in the `Authorization` header — never in a URL, never logged  | PASS     | `openrouter.service.ts`                   |
+| 2   | AI key/model come from env; the key is inlined into the build (see mitigation)    | TRADEOFF | `openrouter.service.ts`, `.env.example`   |
+| 3   | `builderCode` is configurable (not a secret), placeholder default                 | PASS     | `config/builder.config.ts`, `lib/fees.ts` |
+| 4   | Polymarket reads use no secrets                                                   | PASS     | `polymarket.service.ts`, `.env.example`   |
+| 5   | All `fetch` is funneled through `http.ts` (single caller, no header/body logging) | PASS     | repo-wide grep, `http.ts`                 |
 
 ## Findings
 
 ### 1. OpenRouter key — header-only, never URL/log (NFR-SEC-2)
 
-The user-supplied key is attached exclusively in `authHeaders()` in `openrouter.service.ts`:
+The env-configured key is attached exclusively in `authHeaders()` in `openrouter.service.ts`:
 
 ```ts
 Authorization: `Bearer ${apiKey}` // key travels ONLY here (NFR-SEC-2)
 ```
 
-- It is never interpolated into a request URL — the OpenRouter calls hit fixed paths (`/models`, `/chat/completions`) with no key in the query string.
+- It is never interpolated into a request URL — the OpenRouter call hits the fixed `/chat/completions` path with no key in the query string. (Runtime model discovery `/models` was removed; the model now comes from `VITE_OPENROUTER_MODEL`.)
 - It is never logged. `http.ts` (the sole `fetch` caller) logs no request headers or bodies. A grep for `console.*` referencing key/token/auth/bearer across `src/` returns nothing.
 - On error, `toAiError()` normalizes failures to generic user-facing messages (rate-limited / rejected / timed out) and never echoes the key.
-- Persistence (`settings.store.ts`) writes the key to `localStorage` only and never logs it.
+- It is **never persisted client-side.** `settings.store.ts` holds only the `aiEnabled` boolean and the builder override — no key, no secret ever reaches `localStorage`.
 
-### 2. No bundled or hardcoded key (NFR-SEC-1, AC8.4)
+### 2. AI key is deploy-time env config, inlined into the build — tradeoff + mitigation (NFR-SEC-1, AC8.4)
 
-- Repo-wide grep for real key shapes (`sk-or-…`, inline `apiKey = '…'`, `secret = '…'`) found **only** the input placeholder string `"sk-or-v1-…"` in `WSettings.vue` (a UI hint, not a value).
-- `settings.store.ts` initializes `openRouterKey` to `null`; there is no fallback/default key anywhere. The only key ever used is the one the user enters at runtime.
-- `.env` files are gitignored (`.env`, `.env.*`, with `!.env.example`); `.env.example` carries no secret and documents that the AI key is user-supplied at runtime, never bundled.
+This is the one place the posture regressed relative to the earlier user-supplied model, and it is stated honestly:
+
+- `openrouter.service.ts` reads `import.meta.env.VITE_OPENROUTER_API_KEY` / `VITE_OPENROUTER_MODEL`. Vite **inlines `VITE_*` vars into the client bundle at build time**, so a production build made with a real key ships that key inside the JS served to every visitor — it is recoverable by anyone who inspects the bundle. There is no way to make a `VITE_*` value secret in a purely client-side app.
+- **Mitigation for production:** front OpenRouter with a **backend proxy** that holds the key server-side and forwards chat-completion requests; the browser calls the proxy (same-origin, no key) instead of OpenRouter. The client code already funnels the AI call through `http.ts`, so only the base URL + header wiring would move server-side. For a local/demo build a free-tier key is an acceptable, disposable exposure.
+- The key is **not committed to source.** `.env` files are gitignored (`.env`, `.env.*`, with `!.env.example`); `.env.example` carries no real value and documents the inlining caveat. No hardcoded/fallback key exists in `src/` — with no env set, `isAiConfigured()` is `false` and the widget shows a labelled sample suggestion without any network call.
 
 ### 3. `builderCode` — configurable, not a secret (NFR-SEC-4)
 
@@ -52,11 +56,11 @@ Authorization: `Bearer ${apiKey}` // key travels ONLY here (NFR-SEC-2)
 ## Verification commands
 
 ```bash
-grep -rniE "sk-or-|Bearer [A-Za-z0-9]|apiKey *= *['\"]|secret *= *['\"]" src/   # only the WSettings placeholder
+grep -rniE "sk-or-|Bearer [A-Za-z0-9]|apiKey *= *['\"]|secret *= *['\"]" src/   # no hardcoded key
 grep -rn  "fetch(" src/ | grep -v http.ts                                        # empty — single caller
 grep -rniE "console\.(log|error|warn|info)" src/ | grep -iE "key|token|bearer"   # empty — key never logged
 ```
 
 ## Conclusion
 
-All five security invariants hold. The only key ever used is the user-supplied OpenRouter key, confined to `localStorage` and the `Authorization` header; the builderCode is public configuration with a safe placeholder; reads are secret-free; and every network call is funneled through a single non-logging fetch wrapper. No remediation required.
+Four of five invariants hold unchanged: the AI key travels only in the `Authorization` header (never a URL, never logged, and now never persisted client-side), the builderCode is public configuration with a safe placeholder, reads are secret-free, and every network call is funneled through a single non-logging fetch wrapper. The one deliberate tradeoff is **#2**: moving AI config to `VITE_*` env vars means the key is inlined into the client bundle at build time and is therefore exposed in a public deploy. This is acceptable for a demo with a disposable free-tier key; the **production-correct remediation is a backend proxy** so the key never reaches the browser. No secret is committed to source.

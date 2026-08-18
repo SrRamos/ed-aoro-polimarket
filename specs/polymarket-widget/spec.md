@@ -14,7 +14,7 @@ A **single-page, custom Polymarket-style SPA** (D10 — not the official read-on
 
 ### 1.2 Scope
 
-Everything lives on **one page** (`App.vue`) with a vertical, mobile-first layout: header + settings entry, search bar, results list, market detail (modal/panel), bet form + receipt, positions list, and an opt-in AI prediction panel inside the detail.
+Everything lives on **one page** (`App.vue`) with a vertical, mobile-first layout: header + **Enable AI** toggle, search bar, results list, market detail (modal/panel), bet form + receipt, positions list, and an opt-in AI prediction panel inside the detail.
 
 ### 1.3 Confirmed decisions (the spec is built on these)
 
@@ -23,8 +23,8 @@ Everything lives on **one page** (`App.vue`) with a vertical, mobile-first layou
 | D1    | **Market reads are REAL** via Polymarket Gamma API (`https://gamma-api.polymarket.com`) — public, no auth, CORS `*`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | D2    | **Betting is MOCK by default** behind a `BettingService` interface. The reason to mock is **operational, not technical** (corrected): charging a builder fee / attributing volume needs only the `bytes32` `builder` field on the user-signed order — **no backend, no builder secret**. The demo mocks because of **geoblock by IP on `POST /order` (33 countries, incl. US/UK), a ToS ban on VPN circumvention, and the need for a funded USDC wallet + approvals**. The brief confirms a VPN may be required even for reads. The deliverable is a GitHub repo, not a funded real-bet demo. |
 | D3    | **Prices are Gamma snapshots** (`outcomePrices`) for the MVP. Live CLOB `/price` quoting is a deferred enhancement, not built now.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| D4    | **AI is opt-in** via OpenRouter free models; the API key is **user-supplied** in Settings and stored in `localStorage`. No key is ever bundled.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| D5    | AI model is **discovered at runtime** with a preference/fallback chain (`z-ai/glm-5.2:free` → `nvidia/nemotron-3-ultra-550b-a55b:free` → `openai/gpt-oss-20b:free` → `openrouter/free`).                                                                                                                                                                                                                                                                                                                                                                                                      |
+| D4    | **AI is opt-in** via a single **Enable AI** toggle; the OpenRouter **key + model are deploy-time env config** (`VITE_OPENROUTER_API_KEY` / `VITE_OPENROUTER_MODEL`), not user-supplied. No key is persisted client-side; when unconfigured the toggle shows a labelled sample. _(Revised 2026-08 — supersedes the earlier user-supplied-key model; `VITE_*` inlines the key into the build, so production needs a backend proxy.)_                                                                                                                                                            |
+| D5    | AI model is **deploy-time env config** (`VITE_OPENROUTER_MODEL`, e.g. `z-ai/glm-5.2:free`), with an internal `DEFAULT_MODEL` fallback if the var is blank. _(Revised 2026-08 — runtime `/models` discovery was removed; the model is now configured, not discovered.)_                                                                                                                                                                                                                                                                                                                        |
 | D6    | **Light theme only.** The DS ships no dark mode; no dark tokens are invented.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | D7–D8 | **Custom components only**, `SJ`/`W` naming, **token-only**, and they MUST follow **all** DS guidelines (not just tokens).                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | D9    | **Mobile-first under the DS's own conditions**: base = 0, five `min-width` breakpoints, thumb-zone ergonomics, touch ≥24×24 (aim 44×44), inputs ≥16px.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -254,12 +254,12 @@ IF the persisted positions payload is missing or fails to parse, THEN THE SYSTEM
 ### US7 — AI-assisted prediction (bonus)
 
 <a id="ac7-1"></a>
-**AC7.1** (Optional, gated on key)
-WHERE a valid OpenRouter API key is present in settings, THE SYSTEM SHALL enable the "AI suggestion" action inside the market detail.
+**AC7.1** (Optional, gated on toggle) — _revised 2026-08_
+WHERE the **Enable AI** toggle is on, THE SYSTEM SHALL enable the "AI suggestion" action inside the market detail (a real call when env-configured, a labelled sample otherwise).
 
 <a id="ac7-2"></a>
-**AC7.2** (Complex, no-key CTA)
-WHILE no OpenRouter key is configured, WHEN the user looks for the AI feature, THE SYSTEM SHALL disable/hide the AI action and present a CTA linking to Settings (US8) rather than calling the API.
+**AC7.2** (State-driven, toggle-off) — _revised 2026-08_
+WHILE the toggle is off, THE SYSTEM SHALL hide/disable the AI action and make no AI call. (The former "no-key CTA to Settings" is removed — there is no key entry.)
 
 <a id="ac7-3"></a>
 **AC7.3** (Event-driven, on-demand only)
@@ -300,8 +300,8 @@ IF `recommendedOutcome` does not match any provided outcome label after the sing
 > This capability assists the user in _choosing a market_ (over the current list/search results), complementing US7's outcome pick — together they satisfy the brief's "assist in choosing a market and outcome". It reuses the model-discovery and structured-output ladder defined for US7 (AC7.4–AC7.5).
 
 <a id="ac9-1"></a>
-**AC9.1** (Optional, gated on key)
-WHERE a valid OpenRouter API key is present in settings, THE SYSTEM SHALL enable an "AI: pick a market" action over the current market list / search results; WHILE no key is configured, THE SYSTEM SHALL disable/hide it and present the same Settings CTA as AC7.2 rather than calling the API.
+**AC9.1** (Optional, gated on toggle) — _revised 2026-08_
+WHERE the **Enable AI** toggle is on, THE SYSTEM SHALL enable an "AI: pick a market" action over the current market list / search results (a real call when env-configured, a labelled sample otherwise); WHILE the toggle is off, THE SYSTEM SHALL hide/disable it and make no AI call.
 
 <a id="ac9-2"></a>
 **AC9.2** (Event-driven, on-demand only)
@@ -325,27 +325,29 @@ IF the request fails, is rate-limited, or `recommendedMarketId` does not match a
 
 ---
 
-### US8 — Settings (AI key)
+### US8 — Settings (AI toggle)
+
+> **Change note (2026-08 — config-by-env).** AI config moved from _user-supplied API key_ to _deploy-time env config_ (`VITE_OPENROUTER_API_KEY`, `VITE_OPENROUTER_MODEL`). The end user no longer enters a key — they only flip an **Enable AI** toggle. The ACs below are reconciled accordingly; the old key-entry/disclaimer/no-bundled-key wording is superseded. **US8 restated:** As a user, I want a single toggle to enable/disable the optional AI feature, so I control it without handling any keys.
 
 <a id="ac8-1"></a>
-**AC8.1** (Event-driven, save)
-WHEN the user enters an OpenRouter API key in Settings and saves, THE SYSTEM SHALL persist it in `localStorage` and enable the AI feature (US7) without a page reload.
+**AC8.1** (Event-driven, enable)
+WHEN the user turns the **Enable AI** toggle on, THE SYSTEM SHALL persist `aiEnabled` in `localStorage` and enable the AI actions (US7/US9) without a page reload.
 
 <a id="ac8-2"></a>
-**AC8.2** (Event-driven, clear)
-WHEN the user clears/removes the key, THE SYSTEM SHALL delete it from `localStorage` and return the AI feature to its disabled/CTA state.
+**AC8.2** (Event-driven, disable)
+WHEN the user turns the toggle off, THE SYSTEM SHALL persist the off state and hide/disable the AI actions, making no AI network calls.
 
 <a id="ac8-3"></a>
-**AC8.3** (Ubiquitous, disclosure)
-THE SYSTEM SHALL display a security disclaimer in Settings stating the key is stored locally in the browser and sent directly to OpenRouter, and SHALL NOT log the key or place it in any URL.
+**AC8.3** (State-driven, availability status + fallback)
+WHILE the toggle is on, THE SYSTEM SHALL show a status of AI availability ("AI ready" when env-configured, "AI unavailable" otherwise); WHERE AI is not env-configured, THE SYSTEM SHALL present a clearly-labelled **sample** suggestion ("sample — AI not configured") instead of calling the network. THE SYSTEM SHALL never expose an API key to, nor request one from, the end user, and SHALL NOT log the key or place it in any URL.
 
 <a id="ac8-4"></a>
-**AC8.4** (Ubiquitous, no bundled key)
-THE SYSTEM SHALL never ship, embed, or fall back to a built-in/bundled API key; the only key ever used is the user-supplied one.
+**AC8.4** (Ubiquitous, key hygiene — superseded posture)
+THE SYSTEM SHALL source the OpenRouter key only from `VITE_OPENROUTER_API_KEY` (deploy-time env), never hardcoding or committing a key. NOTE: `VITE_*` values are inlined into the client bundle at build time, so — unlike the earlier user-supplied model — the key **is** present in a public build; the production mitigation is a backend proxy (see design.md §2.7, docs/security-review.md §2).
 
 <a id="ac8-5"></a>
-**AC8.5** (State-driven, form conventions)
-WHILE the Settings form is shown, THE SYSTEM SHALL use a persistent visible `<label>` for the key field (never placeholder-as-label), native input semantics, and expose the key field so a value can be entered on touch without iOS zoom (font-size ≥ `--font-size-base`/16px).
+**AC8.5** (State-driven, control conventions)
+WHILE the toggle is shown, THE SYSTEM SHALL implement it as a native checkbox with `role="switch"` and a persistent visible `<label>` ("Enable AI"), keyboard-operable with a visible DS focus ring.
 
 ---
 
@@ -385,9 +387,9 @@ IF the real path is enabled and an order is about to be signed, THEN THE SYSTEM 
 - **US4 — Detail.** Given a market card, When selected, Then the detail opens with outcomes signalled by triad+text, selection drives the bet form, and focus returns on close (AC4.1–AC4.5).
 - **US5 — Bet (builder-aware).** Given a selected outcome and a valid amount, When the user submits, Then cost = size×price and payout = (size/price)×$1 are shown live, the additive builder/platform fee breakdown (`fee = notional × bps / 10000`) is shown before confirmation, a simulated receipt carrying the fees + builderCode is produced, the position persists, and invalid input/no-outcome/service-failure are blocked with specific feedback (AC5.1–AC5.9).
 - **US6 — Positions.** Given placed bets, When the page reloads, Then positions restore from `localStorage` with their fee breakdown + builderCode; an empty first-run state shows when none exist; corrupt storage recovers to empty (AC6.1–AC6.4).
-- **US7 — AI outcome pick.** Given a configured key, When the user explicitly requests an outcome suggestion, Then exactly one request runs, the model is discovered at runtime, output is parsed via the ladder and validated (`recommendedOutcome` ∈ outcomes, confidence clamped), rendered with a numeric confidence signal + disclaimer, and failures show retry without surfacing invalid results (AC7.1–AC7.10).
+- **US7 — AI outcome pick.** Given the AI toggle is on and env-configured, When the user explicitly requests an outcome suggestion, Then exactly one request runs against the env-configured model, output is parsed via the ladder and validated (`recommendedOutcome` ∈ outcomes, confidence clamped), rendered with a numeric confidence signal + disclaimer, and failures show retry without surfacing invalid results; when on but unconfigured, a labelled sample is shown with no network call (AC7.1–AC7.10).
 - **US9 — AI market pick.** Given a configured key, When the user explicitly requests a market recommendation over the visible list, Then exactly one request runs, output is validated (`recommendedMarketId` ∈ presented markets, confidence clamped), the recommended market is identified with a numeric confidence signal + disclaimer, and failures/invalid results show retry without fabrication (AC9.1–AC9.6).
-- **US8 — Settings.** Given the Settings form, When the user saves/clears a key, Then it is persisted/removed in `localStorage`, the AI feature toggles accordingly, the disclaimer shows, no key is ever bundled, and the field follows DS form conventions (AC8.1–AC8.5).
+- **US8 — Settings (AI toggle).** Given the **Enable AI** toggle, When the user turns it on/off, Then `aiEnabled` is persisted in `localStorage`, the AI actions enable/disable accordingly, an availability status shows (AI ready/unavailable), no key is ever exposed to or requested from the user, and the toggle follows DS control conventions (native `role="switch"` + visible `<label>` + focus ring) (AC8.1–AC8.5).
 - **US10 — Real order path (opt-in, gated).** Given the same `BettingService` interface, When the config flag opts in, Then `ClobBettingService` signs L1+Order (with the `builder` field) via a browser wallet and `POST /order`s with no backend; by default it is disabled and the mock is used; gating (geoblock, funded wallet, Verified tier) is disclosed, and the fee breakdown is shown before signing (AC10.1–AC10.5).
 
 ---
@@ -479,12 +481,12 @@ THE SYSTEM SHALL ship the DS light palette only. It SHALL NOT define `@media (pr
 ### 5.5 Security
 
 <a id="nfr-sec-1"></a>
-**NFR-SEC-1** (Ubiquitous, user-supplied key only)
-THE SYSTEM SHALL only ever use the user-supplied OpenRouter key from Settings (`localStorage`); no key is bundled in the build or committed to source (see AC8.4).
+**NFR-SEC-1** (Ubiquitous, env-sourced key; no client persistence) — _revised 2026-08_
+THE SYSTEM SHALL source the OpenRouter key only from `VITE_OPENROUTER_API_KEY` (deploy-time env), never hardcoding or committing it, and never persisting it client-side (`settings.store` holds only `aiEnabled`). NOTE: `VITE_*` vars are inlined into the client bundle at build time, so the key **is** exposed in a public build (this supersedes the earlier "no key bundled" posture); the production-correct mitigation is a backend proxy that holds the key server-side (see docs/security-review.md §2).
 
 <a id="nfr-sec-2"></a>
-**NFR-SEC-2** (Ubiquitous, disclaimer + hygiene)
-THE SYSTEM SHALL show the "stored locally, sent directly to OpenRouter" disclaimer, keep the key out of URLs and logs, and send it only in the `Authorization` header of the OpenRouter request.
+**NFR-SEC-2** (Ubiquitous, key hygiene) — _revised 2026-08_
+THE SYSTEM SHALL keep the key out of URLs and logs, send it only in the `Authorization` header of the OpenRouter request, and never expose it to or request it from the end user. (The old user-facing "stored locally, sent directly to OpenRouter" disclaimer is removed — the user never handles a key.)
 
 <a id="nfr-sec-3"></a>
 **NFR-SEC-3** (Ubiquitous, no secrets for reads)
@@ -534,7 +536,7 @@ The following are explicitly **not** run/built in this feature's default demo:
 - **VPN / geoblock bypass** — the deliverable is not designed around circumventing Polymarket's geo-restrictions (ToS-prohibited); the brief notes a VPN may be needed even for reads, but the widget itself never bypasses geoblock. Only global read endpoints and mock bets run by default.
 - **Dark mode** — the DS ships no dark palette (D6).
 - **Real-time live CLOB pricing** (`/book`, `/price`, `/prices-history` live quoting and price charts) — deferred enhancement; MVP uses Gamma `outcomePrices` snapshots (D3).
-- **Server-side AI proxy** (Approach C) — documented as the production path but not implemented; the challenge uses the user-supplied-key approach (D4).
+- **Server-side AI proxy** (Approach C) — documented as the production path but not implemented; the challenge uses deploy-time env config (D4), which inlines the key into the client bundle. The proxy is the correct production mitigation for that exposure (see docs/security-review.md §2).
 - **Auth/accounts, multi-user, or backend persistence** — state is local (`localStorage` + Pinia).
 
 ---
@@ -548,13 +550,13 @@ The following are explicitly **not** run/built in this feature's default demo:
 | AC2._, AC3._, AC4.*  | `polymarket.service.ts` — `searchMarkets(q)` (Gamma `/public-search`), `getMarkets(filters)` (`/markets`), `getMarket(idOrSlug)`; `normalizeMarket(raw)` performs AC1.* parsing.                                                                                                                                                                                                                                                                                                                                                                                   |
 | AC1.*                | `models/market.ts` — normalized `Market { id, question, slug, outcomes[], prices[], tokenIds[], volume, liquidity, endDate, image, active, closed }`.                                                                                                                                                                                                                                                                                                                                                                                                              |
 | AC5._, AC6._, AC10.* | `betting.service.ts` — `interface BettingService { placeBet(o: BetOrder): Promise<BetReceipt> }`; `MockBettingService` (default, builder-aware) + `ClobBettingService` (opt-in, config-gated, `@polymarket/client` + viem signer) behind the same interface; shared `computeFees(notional, builderConfig)` (additive builder/platform, `notional×bps/10000`); `models/bet.ts` — `BetOrder`, `BetReceipt { …, fees, builderCode }`, `FeeBreakdown`, `Position`; builderCode from config (placeholder default); persisted via `stores/bets.store.ts` (localStorage). |
-| AC7._, AC9._, AC8.*  | `openrouter.service.ts` — `pickFreeModel(apiKey)`, `predictOutcome(market, apiKey)` and `recommendMarket(markets, apiKey)` with the shared parse ladder + validation; `models/prediction.ts` — `AiPrediction { recommendedOutcome, confidence, rationale }`, `AiMarketPick { recommendedMarketId, confidence, rationale }`; key in `stores/settings.store.ts`.                                                                                                                                                                                                     |
+| AC7._, AC9._, AC8.*  | `openrouter.service.ts` — env config via `isAiConfigured()` / `getAiConfig()` (reads `VITE_OPENROUTER_API_KEY` / `VITE_OPENROUTER_MODEL`), `predictOutcome(market)` and `recommendMarket(markets)` with the shared parse ladder + validation, plus `sampleOutcome` / `sampleMarketPick` for the unconfigured fallback; `models/prediction.ts` — `AiPrediction { recommendedOutcome, confidence, rationale }`, `AiMarketPick { recommendedMarketId, confidence, rationale }`; `aiEnabled` toggle in `stores/settings.store.ts` (no key persisted).                  |
 | NFR-SVC-1, NFR-SVC-2 | `http.ts` — fetch wrapper (base URL, timeout, error normalization, retry); Vite dev proxy as CORS fallback.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ### 7.2 Folder architecture (from the analysis doc §4)
 
-Stores (`markets.store.ts`, `bets.store.ts`, `settings.store.ts`), composables (`useMarketSearch.ts` — debounce + loading/empty/error, `useAiPrediction.ts`), UI primitives (`components/ui/`: `SJButton`, `SJInput`, `SJCard`, `SJBadge`, `SJModal`, `SJSpinner`, `SJSkeleton`), and app widgets (`components/widget/`: `WMarketSearch`, `WMarketList`, `WMarketCard`, `WMarketDetail`, `WBetForm`, `WBetReceipt`, `WPositions`, `WAiPrediction`, `WSettings`) implement the requirements above; `styles/base.css` carries the minimal reset, fonts, and `.sr-only`/`.focus-ring` utilities.
+Stores (`markets.store.ts`, `bets.store.ts`, `settings.store.ts`), composables (`useMarketSearch.ts` — debounce + loading/empty/error, `useAiPrediction.ts`), UI primitives (`components/ui/`: `SJButton`, `SJInput`, `SJCard`, `SJBadge`, `SJModal`, `SJSpinner`, `SJSkeleton`), and app widgets (`components/widget/`: `WMarketSearch`, `WMarketList`, `WMarketCard`, `WMarketDetail`, `WBetForm`, `WBetReceipt`, `WPositions`, `WAiPrediction`, `WAiMarketPick`) implement the requirements above; the AI toggle lives in the header (`App.vue`) — the former `WSettings` modal was removed; `styles/base.css` carries the minimal reset, fonts, and `.sr-only`/`.focus-ring` utilities.
 
 ### 7.3 UX mapping (from the analysis doc §6)
 
-Header + Settings entry (US8) → Search bar `WMarketSearch` (US2) → Results `WMarketList`/`WMarketCard` (US3) with an opt-in "AI: pick a market" action over the list (US9) → Detail `WMarketDetail` (US4) → `WBetForm` (with builder/platform fee breakdown, US5) + `WBetReceipt` (fees + builderCode, US5) → `WPositions` (US6) → `WAiPrediction` opt-in inside detail for outcome pick (US7). The bet path is wired to `BettingService`; the opt-in real `ClobBettingService` (US10) swaps in only via config, never in the demo.
+Header + **Enable AI** toggle (US8) → Search bar `WMarketSearch` (US2) → Results `WMarketList`/`WMarketCard` (US3) with an opt-in "AI: pick a market" action over the list (US9) → Detail `WMarketDetail` (US4) → `WBetForm` (with builder/platform fee breakdown, US5) + `WBetReceipt` (fees + builderCode, US5) → `WPositions` (US6) → `WAiPrediction` opt-in inside detail for outcome pick (US7). The bet path is wired to `BettingService`; the opt-in real `ClobBettingService` (US10) swaps in only via config, never in the demo.

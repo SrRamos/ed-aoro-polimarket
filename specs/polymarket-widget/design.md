@@ -20,17 +20,17 @@ src/
     http.ts                      # fetchJson<T>() wrapper: baseURL, timeout, retry, error normalization
     polymarket.service.ts        # searchMarkets, getMarkets, getMarket, normalizeMarket
     betting.service.ts           # BettingService interface, MockBettingService, computeFees, (ClobBettingService stretch)
-    openrouter.service.ts        # pickFreeModel, predictOutcome, recommendMarket, parse ladder
+    openrouter.service.ts        # isAiConfigured/getAiConfig (env), predictOutcome, recommendMarket, sample* fallback, parse ladder
 
   models/
     market.ts                    # Market, RawGammaMarket
     bet.ts                       # BetOrder, BetReceipt, Position, FeeBreakdown, BuilderConfig
-    prediction.ts                # AiPrediction, AiMarketPick, OpenRouterModel
+    prediction.ts                # AiPrediction, AiMarketPick
 
   stores/
     markets.store.ts             # pinia: results, defaultList, selectedMarket, loading/error/empty flags
     bets.store.ts                # pinia: positions[] (persisted), placeBet action
-    settings.store.ts            # pinia: openRouterApiKey, builderCode, real-order feature flag (persisted)
+    settings.store.ts            # pinia: aiEnabled toggle, builderCode override (persisted; no key)
 
   composables/
     useMarketSearch.ts           # debounce (≈300ms) + request-cancellation + loading/empty/error state machine
@@ -56,7 +56,6 @@ src/
       WPositions.vue
       WAiPrediction.vue
       WAiMarketPick.vue
-      WSettings.vue
 
   styles/
     base.css                     # ya existe: reset, .sr-only, .skip-link, .focus-ring
@@ -326,30 +325,36 @@ export interface AiMarketPick {
 
 ### 2.7 `services/openrouter.service.ts`
 
+> **Revised 2026-08 — config by env.** The key + model come from `VITE_OPENROUTER_API_KEY` / `VITE_OPENROUTER_MODEL` (read via `getAiConfig()`), not a per-call argument. Runtime model discovery (`pickFreeModel` / `GET /models`) was **removed** — the model is the env value, with an internal `DEFAULT_MODEL` constant used only if the model var is blank (never a real call when the key is absent).
+
 ```ts
-const MODEL_PREFERENCE = [
-  'z-ai/glm-5.2:free',
-  'nvidia/nemotron-3-ultra-550b-a55b:free',
-  'openai/gpt-oss-20b:free',
-] as const
+/** Deploy-time env: `DEFAULT_MODEL` is the last-resort fallback only. */
+const DEFAULT_MODEL = 'z-ai/glm-5.2:free'
 
-/** GET /api/v1/models, filters `:free`, walks MODEL_PREFERENCE, falls back to any
- *  free model advertising structured_outputs, then 'openrouter/free'. AC7.4 */
-export function pickFreeModel(apiKey: string): Promise<string>
+/** True when both VITE_OPENROUTER_API_KEY and VITE_OPENROUTER_MODEL are set. */
+export function isAiConfigured(): boolean
+/** { apiKey, model } from env, or null when no key is set. */
+export function getAiConfig(): AiConfig | null
 
-/** Single on-demand call (AC7.3). Applies the 3-step degradation ladder
- *  (AC7.5): json_schema strict -> json_object + instruction -> fence-strip +
- *  first-{}-block + retry once at temperature:0. Validates recommendedOutcome
- *  ∈ market.outcomes and clamps confidence (AC7.6); returns a rejected
- *  promise (never a fabricated/coerced result) when validation fails after
- *  the retry (AC7.9, AC7.10). */
-export function predictOutcome(market: Market, apiKey: string): Promise<AiPrediction>
+/** Single on-demand call (AC7.3), env-configured. Applies the degradation
+ *  ladder (AC7.5): json_schema strict -> json_object + "JSON only" instruction,
+ *  each parsed through fence-strip + first-{}-block, retry once at
+ *  temperature:0. Validates recommendedOutcome ∈ market.outcomes and clamps
+ *  confidence (AC7.6); returns a rejected promise (never a fabricated/coerced
+ *  result) when validation fails after the retry (AC7.9, AC7.10). Throws an
+ *  AiError immediately if AI is not env-configured (no network). */
+export function predictOutcome(market: Market): Promise<AiPrediction>
 
 /** Same ladder/validation, over the currently visible market list (AC9.2–AC9.3, AC9.6). */
-export function recommendMarket(markets: Market[], apiKey: string): Promise<AiMarketPick>
+export function recommendMarket(markets: Market[]): Promise<AiMarketPick>
+
+/** Network-free, deterministic sample suggestions shown (labelled "sample — AI
+ *  not configured") when the toggle is on but env config is absent. */
+export function sampleOutcome(market: Market): AiPrediction
+export function sampleMarketPick(markets: Market[]): AiMarketPick
 ```
 
-- **Security (NFR-SEC-1/2):** the `Authorization: Bearer <key>` header is attached only inside this module, built at call time from the string passed in — never interpolated into a URL, never logged (see §6). The key never crosses into `http.ts`'s generic logging path because `fetchJson` never logs request headers (module-wide rule, not per-call).
+- **Security (NFR-SEC-1/2, revised):** the `Authorization: Bearer <key>` header is attached only inside this module, built at call time from the env-sourced key — never interpolated into a URL, never logged (see §6), and never persisted client-side. **Tradeoff:** `VITE_*` env vars are inlined into the client bundle at build time, so the key is exposed in a public build; the production mitigation is a backend proxy (see docs/security-review.md §2). The key never crosses into `http.ts`'s generic logging path because `fetchJson` never logs request headers (module-wide rule, not per-call).
 
 ### 2.8 `config/builder.config.ts` / `config/features.config.ts`
 
@@ -398,9 +403,9 @@ export function isRealOrderPathEnabled(): boolean
 | `WPositions`    | `SJCard` list, empty state                                                     | AC6.1–AC6.4                                                    |
 | `WAiPrediction` | `SJButton`, confidence bar (`--color-primary` + numeric label), `SJLiveRegion` | AC7.1–AC7.10                                                   |
 | `WAiMarketPick` | `SJButton`, highlights a `WMarketCard`, `SJLiveRegion`                         | AC9.1–AC9.6                                                    |
-| `WSettings`     | `SJModal` or panel, `SJInput` (key field), disclaimer text                     | AC8.1–AC8.5                                                    |
+| AI toggle       | native checkbox `role="switch"` + `<label>` in the header (`App.vue`)          | AC8.1–AC8.5                                                    |
 
-`App.vue` composes: header (title + Settings entry, US8) → `WMarketSearch` (US2) → `WMarketList` incl. `WAiMarketPick` (US3/US9) → `WMarketDetail` incl. `WBetForm`/`WBetReceipt`/`WAiPrediction` (US4/US5/US7) → `WPositions` (US6) → `WSettings` as an overlay (US8), matching the analysis §6 UX flow.
+_Revised 2026-08:_ the `WSettings` modal + `SJInput` key field were removed; AI config is env-based and the only user control is the header **Enable AI** toggle. `App.vue` composes: header (title + **Enable AI** toggle, US8) → `WMarketSearch` (US2) → `WMarketList` incl. `WAiMarketPick` (US3/US9) → `WMarketDetail` incl. `WBetForm`/`WBetReceipt`/`WAiPrediction` (US4/US5/US7) → `WPositions` (US6), matching the analysis §6 UX flow.
 
 ---
 
@@ -440,12 +445,12 @@ interface BetsState {
 
 ```ts
 interface SettingsState {
-  openRouterApiKey: string | null // AC8.1, persisted
+  aiEnabled: boolean // AC8.1/8.2, persisted — the user-facing AI on/off toggle
   builderCodeOverride: string | null // optional user override of config default, persisted
 }
 ```
 
-**Persists both fields to `localStorage`** under key `polymarket-widget:settings:v1` (AC8.1, AC8.2). `openRouterApiKey` is never included in any log statement or query string (NFR-SEC-1/2) — components read it only to pass directly into `openrouter.service.ts` calls.
+**Persists both fields to `localStorage`** under key `polymarket-widget:settings:v1` (AC8.1, AC8.2). _Revised 2026-08:_ no OpenRouter key is stored here (or anywhere client-side) — the key + model are deploy-time env config read by `openrouter.service.ts` (NFR-SEC-1/2). The store holds only the `aiEnabled` boolean and the builder override.
 
 **Persistence mechanism (all three stores):** a single small helper `stores/persist.ts` (`readJson<T>(key, fallback)` / `writeJson(key, value)`) used by `bets.store.ts` and `settings.store.ts`, keeping the try/catch-and-recover logic (AC6.4) in one tested place rather than duplicated per store. `markets.store.ts` does not use it (nothing persisted there).
 
@@ -464,11 +469,11 @@ Every async-driven view (search, browse, detail load, bet submit, AI predict, AI
 | Positions (`WPositions`)               | n/a (synchronous from store)                                                                | first-run onboarding empty state, distinct tone from error (AC6.3) | n/a (corrupt storage recovers silently to empty per AC6.4 — no error UI, just an empty list) | n/a                                                                                    |
 | AI outcome (`WAiPrediction`)           | `SJSpinner` + polite live region (AC7.7)                                                    | n/a (no-key state is a CTA, not "empty" — AC7.2)                   | error + Retry, never renders a partial/invalid result (AC7.9)                                | `role="status"` loading, `role="alert"` error                                          |
 | AI market pick (`WAiMarketPick`)       | same pattern (AC9.4)                                                                        | n/a                                                                | same pattern (AC9.6)                                                                         | same                                                                                   |
-| Settings (`WSettings`)                 | n/a                                                                                         | n/a                                                                | inline validation only (e.g. obviously-empty key on save)                                    | n/a                                                                                    |
+| AI toggle (header)                     | n/a                                                                                         | n/a                                                                | n/a (a boolean toggle; no input to validate)                                                 | n/a                                                                                    |
 
 **Reads degrade to fixtures (sanctioned failure mode, spec.md US2 note).** The Search/Browse "error" column above is the contract when the fixture fallback is disabled. By default, `markets.store` catches any read failure (network/CORS/geoblock/5xx) and **degrades to the bundled fixtures** (`fixtures/markets.ts`) with a `usingFallback` flag driving a "sample data" notice, instead of leaving the user on an error screen. The AC2.5/AC3.4 error-+-retry path stays implemented (`retry()`) as the secondary path, exercisable via a demo override — so a geoblocked/offline demo is always usable.
 
-**No-key gating (AC7.2, AC9.1):** `WAiPrediction`/`WAiMarketPick` read `settings.store.openRouterApiKey`; when falsy, the action renders as a disabled/CTA state linking to `WSettings` and **never constructs an `openrouter.service.ts` call** — the gating lives in the widget, not the service, so the service itself has no knowledge of UI state.
+**Toggle + config gating (AC7.1/7.2, AC9.1) — revised 2026-08:** `WAiPrediction`/`WAiMarketPick` are gated by `settings.store.aiEnabled` (the header toggle) and `isAiConfigured()`. Off → the section is hidden and **no call is constructed**. On + configured → a real `openrouter.service.ts` call. On + unconfigured → a labelled `sample*` suggestion, **never a network call**. The gating lives in `App.vue`/the widgets, not the service; the service only refuses (throws `AiError`) if invoked while unconfigured.
 
 ---
 
@@ -493,15 +498,15 @@ Scope: browser-only, no backend, no telemetry vendor. "Observability" here means
 | AC4.1–AC4.5            | `components/widget/WMarketDetail.vue`, `components/ui/SJModal.vue`, `SJBadge.vue`, `stores/markets.store.ts` (`selectMarket`/`selectOutcome`)                                                                                                                    |
 | AC5.1–AC5.9            | `lib/fees.ts` (`computeFees` — pure source of truth, re-exported by the service), `services/betting.service.ts` (`MockBettingService`), `models/bet.ts`, `stores/bets.store.ts`, `components/widget/WBetForm.vue`, `WBetReceipt.vue`, `config/builder.config.ts` |
 | AC6.1–AC6.4            | `stores/bets.store.ts`, `stores/persist.ts`, `components/widget/WPositions.vue`                                                                                                                                                                                  |
-| AC7.1–AC7.10           | `services/openrouter.service.ts` (`pickFreeModel`, `predictOutcome`), `composables/useAiPrediction.ts`, `components/widget/WAiPrediction.vue`, `models/prediction.ts`                                                                                            |
-| AC8.1–AC8.5            | `stores/settings.store.ts`, `components/widget/WSettings.vue`                                                                                                                                                                                                    |
+| AC7.1–AC7.10           | `services/openrouter.service.ts` (`isAiConfigured`/`getAiConfig`, `predictOutcome`, `sampleOutcome`), `components/widget/WAiPrediction.vue`, `models/prediction.ts`                                                                                              |
+| AC8.1–AC8.5            | `stores/settings.store.ts` (`aiEnabled`), AI toggle in `App.vue` header                                                                                                                                                                                          |
 | AC9.1–AC9.6            | `services/openrouter.service.ts` (`recommendMarket`), `composables/useAiPrediction.ts`, `components/widget/WAiMarketPick.vue`, `models/prediction.ts`                                                                                                            |
 | AC10.1–AC10.5          | `services/betting.service.ts` (`ClobBettingService`, `createBettingService`), `config/features.config.ts`                                                                                                                                                        |
 | NFR-DS-1…8             | `components/ui/*`, `components/widget/*`, `styles/base.css` (no raw literals anywhere in `<style>` blocks)                                                                                                                                                       |
 | NFR-MF-1…4             | `components/ui/*`, `components/widget/*` (breakpoint media queries at `md`/`lg`/etc, sticky CTA in `WBetForm`)                                                                                                                                                   |
 | NFR-A11Y-1…5           | `components/ui/SJLiveRegion.vue`, `SJModal.vue` (focus trap/return), all `SJBadge` usages (color+text), `styles/base.css` (`.sr-only`, `.focus-ring`, reduced-motion gates)                                                                                      |
 | NFR-THEME-1            | `styles/base.css`, absence of any `@media (prefers-color-scheme: dark)` / `[data-theme]` block repo-wide                                                                                                                                                         |
-| NFR-SEC-1…5            | `stores/settings.store.ts`, `services/openrouter.service.ts` (header-only key usage), `config/builder.config.ts`, `.env.example`                                                                                                                                 |
+| NFR-SEC-1…5            | `services/openrouter.service.ts` (env-sourced key, header-only, not persisted; build-inlining tradeoff + proxy mitigation), `stores/settings.store.ts` (no key), `config/builder.config.ts`, `.env.example`, `docs/security-review.md`                           |
 | NFR-SVC-1…3            | `services/http.ts` (sole fetch caller), `vite.config.ts` (dev proxy fallback), `services/betting.service.ts` (`createBettingService` single wiring point)                                                                                                        |
 | NFR-TEST-1, NFR-TEST-2 | `tests/unit/*.spec.ts`, `tests/e2e/*.spec.ts` — see `tasks.md` §test streams                                                                                                                                                                                     |
 
