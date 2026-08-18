@@ -9,15 +9,19 @@ import { useMarketsStore } from './stores/markets.store'
 import { useBetsStore } from './stores/bets.store'
 import { useSettingsStore } from './stores/settings.store'
 import { getBuilderConfig } from './config/builder.config'
-import { predictOutcome, recommendMarket } from './services/openrouter.service'
+import {
+  predictOutcome,
+  recommendMarket,
+  isAiConfigured,
+  sampleOutcome,
+  sampleMarketPick,
+} from './services/openrouter.service'
 import WMarketSearch from './components/widget/WMarketSearch.vue'
 import WMarketList from './components/widget/WMarketList.vue'
 import WMarketDetail from './components/widget/WMarketDetail.vue'
 import WPositions from './components/widget/WPositions.vue'
 import WAiMarketPick from './components/widget/WAiMarketPick.vue'
 import WBetReceipt from './components/widget/WBetReceipt.vue'
-import WSettings from './components/widget/WSettings.vue'
-import SJButton from './components/ui/SJButton.vue'
 import SJBadge from './components/ui/SJBadge.vue'
 
 /* ---------------------------------------------------------------- *
@@ -25,8 +29,10 @@ import SJBadge from './components/ui/SJBadge.vue'
  *  - Market data → markets store (real Gamma read, fixture fallback).
  *  - Betting → bets store → MockBettingService (builder-aware), positions
  *    persisted to localStorage.
- *  - AI → openrouter.service (REAL OpenRouter call, gated by the user key).
- *  - Settings/key → settings store, persisted to localStorage.
+ *  - AI → openrouter.service (REAL OpenRouter call when env-configured; a
+ *    labelled sample when the toggle is on but no env config is present).
+ *  - Settings → settings store: just an `aiEnabled` toggle, persisted to
+ *    localStorage. The key + model are deploy-time env config, never here.
  * Widgets keep the same props/events — only the wiring changed.
  * ---------------------------------------------------------------- */
 
@@ -35,7 +41,10 @@ const betsStore = useBetsStore()
 const settingsStore = useSettingsStore()
 const { usingFallback } = storeToRefs(marketsStore)
 const { positions } = storeToRefs(betsStore)
-const { openRouterKey } = storeToRefs(settingsStore)
+const { aiEnabled } = storeToRefs(settingsStore)
+
+/** AI is env-configured (key + model present). Fixed for the session/build. */
+const aiConfigured = isAiConfigured()
 
 /** Builder/fee config resolved from env/settings (placeholder default). */
 const builderConfig = computed(() =>
@@ -95,6 +104,8 @@ function selectMarket(market: Market) {
   betError.value = null
   aiStatus.value = 'idle'
   aiPrediction.value = null
+  aiIsSample.value = false
+  aiError.value = null
   detailOpen.value = true
 }
 
@@ -155,18 +166,30 @@ function dismissReceipt() {
   if (receiptTimer) clearTimeout(receiptTimer)
 }
 
-/* --- AI outcome suggestion (US7) — REAL OpenRouter call, gated by the key --- */
+/* --- AI outcome suggestion (US7) — REAL OpenRouter call when env-configured,
+       a labelled sample otherwise; gated by the aiEnabled toggle --- */
 const aiStatus = ref<ViewStatus>('idle')
 const aiPrediction = ref<AiPrediction | null>(null)
+const aiIsSample = ref(false)
 const aiError = ref<string | null>(null)
 
 async function requestAiPrediction() {
   const market = selectedMarket.value
-  const key = openRouterKey.value
-  if (!market || !key) return
+  if (!market || !aiEnabled.value) return
+
+  // No env config → labelled sample suggestion, never a network call.
+  if (!aiConfigured) {
+    aiPrediction.value = sampleOutcome(market)
+    aiIsSample.value = true
+    aiError.value = null
+    aiStatus.value = 'success'
+    return
+  }
+
   aiStatus.value = 'loading'
   aiError.value = null
   aiPrediction.value = null
+  aiIsSample.value = false
 
   // Dev aid: preview the error state without a live model call.
   if (forceAiError.value) {
@@ -176,7 +199,7 @@ async function requestAiPrediction() {
   }
 
   try {
-    aiPrediction.value = await predictOutcome(market, key)
+    aiPrediction.value = await predictOutcome(market)
     aiStatus.value = 'success'
   } catch (err) {
     aiError.value = err instanceof Error ? err.message : 'The AI request failed. Please retry.'
@@ -184,9 +207,11 @@ async function requestAiPrediction() {
   }
 }
 
-/* --- AI market pick (US9) — REAL OpenRouter call over the visible list --- */
+/* --- AI market pick (US9) — REAL OpenRouter call over the visible list when
+       env-configured, a labelled sample otherwise --- */
 const ampStatus = ref<ViewStatus>('idle')
 const ampPick = ref<AiMarketPick | null>(null)
+const ampIsSample = ref(false)
 const ampError = ref<string | null>(null)
 
 const recommendedMarketId = computed(() =>
@@ -198,12 +223,22 @@ const recommendedQuestion = computed(() => {
 })
 
 async function requestAiMarketPick() {
-  const key = openRouterKey.value
   const markets = displayedMarkets.value
-  if (!key || markets.length === 0) return
+  if (!aiEnabled.value || markets.length === 0) return
+
+  // No env config → labelled sample pick, never a network call.
+  if (!aiConfigured) {
+    ampPick.value = sampleMarketPick(markets)
+    ampIsSample.value = true
+    ampError.value = null
+    ampStatus.value = 'success'
+    return
+  }
+
   ampStatus.value = 'loading'
   ampError.value = null
   ampPick.value = null
+  ampIsSample.value = false
 
   if (forceAiError.value) {
     ampError.value = 'Forced AI error (dev control). Please retry.'
@@ -212,7 +247,7 @@ async function requestAiMarketPick() {
   }
 
   try {
-    ampPick.value = await recommendMarket(markets, key)
+    ampPick.value = await recommendMarket(markets)
     ampStatus.value = 'success'
   } catch (err) {
     ampError.value = err instanceof Error ? err.message : 'The AI request failed. Please retry.'
@@ -223,31 +258,23 @@ async function requestAiMarketPick() {
 function dismissAmp() {
   ampStatus.value = 'idle'
   ampPick.value = null
+  ampIsSample.value = false
   ampError.value = null
 }
 
-/* --- Settings / AI key (persisted in the settings store) --- */
-const settingsOpen = ref(false)
-const hasKey = computed(() => !!openRouterKey.value)
+/* --- AI toggle (persisted in the settings store) --- */
+const aiStatusLabel = computed(() => (aiConfigured ? 'AI ready' : 'AI unavailable'))
 
-function openSettings() {
-  settingsOpen.value = true
-}
-function openSettingsFromDetail() {
-  detailOpen.value = false
-  settingsOpen.value = true
-}
-function saveKey(key: string) {
-  settingsStore.saveKey(key)
-  settingsOpen.value = false
-}
-function clearKey() {
-  settingsStore.clearKey()
-  // Reset AI states that depended on the key.
-  aiStatus.value = 'idle'
-  aiPrediction.value = null
-  aiError.value = null
-  dismissAmp()
+function onToggleAi(enabled: boolean) {
+  settingsStore.setAiEnabled(enabled)
+  if (!enabled) {
+    // Reset AI states when turning the feature off.
+    aiStatus.value = 'idle'
+    aiPrediction.value = null
+    aiIsSample.value = false
+    aiError.value = null
+    dismissAmp()
+  }
 }
 
 /* --- Lifecycle --- */
@@ -273,13 +300,22 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="app__actions">
-        <span class="app__ai-flag" :class="hasKey ? 'app__ai-flag--on' : 'app__ai-flag--off'">
-          <span aria-hidden="true">{{ hasKey ? '●' : '○' }}</span>
-          AI {{ hasKey ? 'on' : 'off' }}
-        </span>
-        <SJButton variant="secondary" size="sm" @click="openSettings">
-          <span aria-hidden="true">⚙</span>&nbsp;Settings
-        </SJButton>
+        <label class="ai-toggle">
+          <input
+            class="ai-toggle__input"
+            type="checkbox"
+            role="switch"
+            :checked="aiEnabled"
+            @change="onToggleAi(($event.target as HTMLInputElement).checked)"
+          />
+          <span class="ai-toggle__track" aria-hidden="true">
+            <span class="ai-toggle__thumb" />
+          </span>
+          <span class="ai-toggle__text">
+            <span class="ai-toggle__label">Enable AI</span>
+            <span v-if="aiEnabled" class="ai-toggle__status">{{ aiStatusLabel }}</span>
+          </span>
+        </label>
       </div>
     </header>
 
@@ -307,15 +343,16 @@ onBeforeUnmount(() => {
       <WMarketSearch v-model:query="query" @search="onSearch" />
 
       <WAiMarketPick
-        :has-key="hasKey"
+        :enabled="aiEnabled"
+        :configured="aiConfigured"
         :status="ampStatus"
         :pick="ampPick"
         :recommended-question="recommendedQuestion"
+        :sample="ampIsSample"
         :error-message="ampError ?? undefined"
         @request="requestAiMarketPick"
         @retry="requestAiMarketPick"
         @dismiss="dismissAmp"
-        @open-settings="openSettings"
       />
 
       <p v-if="usingFallback" class="app__fallback" role="status">
@@ -340,8 +377,8 @@ onBeforeUnmount(() => {
     <footer class="app__footer">
       <p>
         Demo build · market data is real (Polymarket Gamma, sample fallback if unreachable) · bets
-        are simulated (mock <code>BettingService</code>) · AI is opt-in via your OpenRouter key. Not
-        financial advice.
+        are simulated (mock <code>BettingService</code>) · AI is opt-in via the Enable AI toggle
+        (configured by deployment). Not financial advice.
       </p>
     </footer>
   </div>
@@ -355,24 +392,17 @@ onBeforeUnmount(() => {
     :bet-error="betError"
     :builder-config="builderConfig"
     :reset-key="betFormResetKey"
-    :ai-has-key="hasKey"
+    :ai-enabled="aiEnabled"
+    :ai-configured="aiConfigured"
     :ai-status="aiStatus"
     :ai-prediction="aiPrediction"
+    :ai-sample="aiIsSample"
     :ai-error="aiError"
     @close="closeDetail"
     @select-outcome="selectOutcome"
     @place="placeBet"
     @ai-request="requestAiPrediction"
     @ai-retry="requestAiPrediction"
-    @open-settings="openSettingsFromDetail"
-  />
-
-  <WSettings
-    :open="settingsOpen"
-    :api-key="openRouterKey"
-    @close="settingsOpen = false"
-    @save="saveKey"
-    @clear="clearKey"
   />
 
   <WBetReceipt
@@ -444,26 +474,86 @@ onBeforeUnmount(() => {
   gap: var(--space-3);
 }
 
-.app__ai-flag {
+.ai-toggle {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  border-radius: var(--radius-pill);
+  gap: var(--space-3);
+  cursor: pointer;
 }
 
-.app__ai-flag--on {
-  color: var(--color-success-text);
-  background: var(--color-success-surface);
-  border: 1px solid var(--color-success-border);
+/* Visually-hidden native checkbox — keeps semantics + keyboard behaviour. */
+.ai-toggle__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-.app__ai-flag--off {
-  color: var(--color-text-secondary);
+.ai-toggle__track {
+  position: relative;
+  flex: 0 0 auto;
+  width: calc(var(--space-10) + var(--space-1));
+  height: var(--space-6);
   background: var(--color-surface-secondary);
   border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-pill);
+  transition: background var(--duration-fast) var(--easing-out);
+}
+
+.ai-toggle__thumb {
+  position: absolute;
+  top: 50%;
+  left: var(--space-1);
+  width: var(--space-4);
+  height: var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-50%);
+  transition: transform var(--duration-fast) var(--easing-out);
+}
+
+.ai-toggle__input:checked + .ai-toggle__track {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.ai-toggle__input:checked + .ai-toggle__track .ai-toggle__thumb {
+  transform: translate(var(--space-5), -50%);
+}
+
+.ai-toggle__input:focus-visible + .ai-toggle__track {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.ai-toggle__text {
+  display: flex;
+  flex-direction: column;
+  line-height: var(--leading-tight);
+}
+
+.ai-toggle__label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-strong);
+}
+
+.ai-toggle__status {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-toggle__track,
+  .ai-toggle__thumb {
+    transition: none;
+  }
 }
 
 .demo {

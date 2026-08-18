@@ -9,25 +9,29 @@ import SJLiveRegion from '../ui/SJLiveRegion.vue'
 
 /**
  * AI outcome suggestion (design.md §3.2, AC7.1–AC7.10). On-demand only.
- * No key → CTA to Settings (never calls the API). Confidence shown as a
- * --color-primary bar paired with a numeric label (never color alone),
+ * Gated by the "Enable AI" toggle (`enabled`): when off, the whole section is
+ * hidden. When on but AI is not env-configured, clicking the trigger shows a
+ * labelled sample suggestion (`sample`) with no network call. Confidence shows
+ * as a --color-primary bar paired with a numeric label (never color alone),
  * plus a "not financial advice" disclaimer.
  */
 type WAiPredictionProps = {
-  hasKey: boolean
+  enabled: boolean
+  configured: boolean
   status: ViewStatus
   prediction?: AiPrediction | null
+  sample?: boolean
   errorMessage?: string
 }
 const props = withDefaults(defineProps<WAiPredictionProps>(), {
   prediction: null,
+  sample: false,
   errorMessage: 'The AI request failed. Please try again.',
 })
 
 type WAiPredictionEmits = {
   request: []
   retry: []
-  'open-settings': []
 }
 const emit = defineEmits<WAiPredictionEmits>()
 
@@ -37,7 +41,7 @@ const confidencePct = computed(() =>
 </script>
 
 <template>
-  <section class="ai" aria-labelledby="ai-outcome-heading">
+  <section v-if="enabled" class="ai" aria-labelledby="ai-outcome-heading">
     <div class="ai__head">
       <h3 id="ai-outcome-heading" class="ai__title">
         <span aria-hidden="true">✨</span> AI outcome suggestion
@@ -57,17 +61,10 @@ const confidencePct = computed(() =>
       "
     />
 
-    <!-- No key (AC7.2) -->
-    <div v-if="!hasKey" class="ai__cta">
-      <p class="ai__cta-text">Add your OpenRouter API key in Settings to enable AI suggestions.</p>
-      <SJButton variant="secondary" size="sm" @click="emit('open-settings')"
-        >Open Settings</SJButton
-      >
-    </div>
-
     <!-- Idle / trigger (AC7.3) -->
-    <div v-else-if="status === 'idle'" class="ai__idle">
+    <div v-if="status === 'idle'" class="ai__idle">
       <p class="ai__idle-text">Get a data-grounded second opinion on which outcome to pick.</p>
+      <p v-if="!configured" class="ai__hint">Showing a sample suggestion — AI is not configured.</p>
       <SJButton variant="primary" size="sm" @click="emit('request')">Get AI suggestion</SJButton>
     </div>
 
@@ -85,6 +82,7 @@ const confidencePct = computed(() =>
 
     <!-- Success (AC7.8) -->
     <div v-else-if="status === 'success' && prediction" class="ai__result">
+      <p v-if="sample" class="ai__sample">sample — AI not configured</p>
       <p class="ai__pick">
         Recommended: <strong>{{ prediction.recommendedOutcome }}</strong>
       </p>
@@ -127,7 +125,6 @@ const confidencePct = computed(() =>
   color: var(--color-text-heading);
 }
 
-.ai__cta,
 .ai__idle {
   display: flex;
   flex-direction: column;
@@ -135,10 +132,27 @@ const confidencePct = computed(() =>
   align-items: flex-start;
 }
 
-.ai__cta-text,
 .ai__idle-text {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
+}
+
+.ai__hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.ai__sample {
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-pill);
 }
 
 .ai__loading {

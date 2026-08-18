@@ -9,20 +9,25 @@ import SJLiveRegion from '../ui/SJLiveRegion.vue'
 
 /**
  * AI market pick over the visible list (design.md §3.2, AC9.1–AC9.6).
- * On-demand only; no key → same Settings CTA as the outcome pick. The
- * recommended market is also highlighted in the list (parent wires that via
- * recommendedMarketId). Confidence is a numeric-labelled bar; disclaimer shown.
+ * On-demand only; gated by the "Enable AI" toggle (`enabled`) — off hides the
+ * whole section. When on but not env-configured, the trigger yields a labelled
+ * sample pick (`sample`) with no network call. The recommended market is also
+ * highlighted in the list (parent wires that via recommendedMarketId).
+ * Confidence is a numeric-labelled bar; disclaimer shown.
  */
 type WAiMarketPickProps = {
-  hasKey: boolean
+  enabled: boolean
+  configured: boolean
   status: ViewStatus
   pick?: AiMarketPick | null
   recommendedQuestion?: string | null
+  sample?: boolean
   errorMessage?: string
 }
 const props = withDefaults(defineProps<WAiMarketPickProps>(), {
   pick: null,
   recommendedQuestion: null,
+  sample: false,
   errorMessage: 'The AI request failed. Please try again.',
 })
 
@@ -30,7 +35,6 @@ type WAiMarketPickEmits = {
   request: []
   retry: []
   dismiss: []
-  'open-settings': []
 }
 const emit = defineEmits<WAiMarketPickEmits>()
 
@@ -38,18 +42,14 @@ const confidencePct = computed(() => (props.pick ? formatPercent(props.pick.conf
 </script>
 
 <template>
-  <section class="amp" aria-labelledby="amp-heading">
+  <section v-if="enabled" class="amp" aria-labelledby="amp-heading">
     <div class="amp__bar">
       <h3 id="amp-heading" class="amp__title">
         <span aria-hidden="true">✨</span> AI: pick a market
       </h3>
 
-      <!-- No key (AC9.1) -->
-      <SJButton v-if="!hasKey" variant="secondary" size="sm" @click="emit('open-settings')"
-        >Enable in Settings</SJButton
-      >
       <!-- Idle trigger (AC9.2) -->
-      <SJButton v-else-if="status === 'idle'" variant="primary" size="sm" @click="emit('request')"
+      <SJButton v-if="status === 'idle'" variant="primary" size="sm" @click="emit('request')"
         >Recommend a market</SJButton
       >
       <SJButton
@@ -74,8 +74,8 @@ const confidencePct = computed(() => (props.pick ? formatPercent(props.pick.conf
       "
     />
 
-    <p v-if="!hasKey" class="amp__muted">
-      Add your OpenRouter key to let the AI recommend which market to explore.
+    <p v-if="status === 'idle' && !configured" class="amp__muted">
+      Showing a sample recommendation — AI is not configured.
     </p>
 
     <div v-else-if="status === 'loading'" class="amp__loading">
@@ -89,6 +89,7 @@ const confidencePct = computed(() => (props.pick ? formatPercent(props.pick.conf
     </div>
 
     <div v-else-if="status === 'success' && pick" class="amp__result">
+      <p v-if="sample" class="amp__sample">sample — AI not configured</p>
       <p class="amp__pick">
         Top pick:
         <strong>{{ recommendedQuestion }}</strong>
@@ -144,6 +145,19 @@ const confidencePct = computed(() => (props.pick ? formatPercent(props.pick.conf
 .amp__muted {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
+}
+
+.amp__sample {
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-pill);
 }
 
 .amp__loading {

@@ -24,9 +24,11 @@ type WMarketDetailProps = {
   betError?: string | null
   builderConfig: BuilderConfig
   resetKey?: number
-  aiHasKey: boolean
+  aiEnabled: boolean
+  aiConfigured: boolean
   aiStatus: ViewStatus
   aiPrediction?: AiPrediction | null
+  aiSample?: boolean
   aiError?: string | null
 }
 const props = withDefaults(defineProps<WMarketDetailProps>(), {
@@ -34,6 +36,7 @@ const props = withDefaults(defineProps<WMarketDetailProps>(), {
   betError: null,
   resetKey: 0,
   aiPrediction: null,
+  aiSample: false,
   aiError: null,
 })
 
@@ -43,7 +46,6 @@ type WMarketDetailEmits = {
   place: [order: BetOrder]
   'ai-request': []
   'ai-retry': []
-  'open-settings': []
 }
 const emit = defineEmits<WMarketDetailEmits>()
 
@@ -126,13 +128,14 @@ const selectedTokenId = computed(() =>
 
       <!-- AI outcome suggestion (US7) -->
       <WAiPrediction
-        :has-key="aiHasKey"
+        :enabled="aiEnabled"
+        :configured="aiConfigured"
         :status="aiStatus"
         :prediction="aiPrediction"
+        :sample="aiSample"
         :error-message="aiError ?? undefined"
         @request="emit('ai-request')"
         @retry="emit('ai-retry')"
-        @open-settings="emit('open-settings')"
       />
     </div>
   </SJModal>
