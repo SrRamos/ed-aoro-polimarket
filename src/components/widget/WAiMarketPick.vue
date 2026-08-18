@@ -34,9 +34,7 @@ type WAiMarketPickEmits = {
 }
 const emit = defineEmits<WAiMarketPickEmits>()
 
-const confidencePct = computed(() =>
-  props.pick ? formatPercent(props.pick.confidence) : '0%',
-)
+const confidencePct = computed(() => (props.pick ? formatPercent(props.pick.confidence) : '0%'))
 </script>
 
 <template>
@@ -47,19 +45,11 @@ const confidencePct = computed(() =>
       </h3>
 
       <!-- No key (AC9.1) -->
-      <SJButton
-        v-if="!hasKey"
-        variant="secondary"
-        size="sm"
-        @click="emit('open-settings')"
+      <SJButton v-if="!hasKey" variant="secondary" size="sm" @click="emit('open-settings')"
         >Enable in Settings</SJButton
       >
       <!-- Idle trigger (AC9.2) -->
-      <SJButton
-        v-else-if="status === 'idle'"
-        variant="primary"
-        size="sm"
-        @click="emit('request')"
+      <SJButton v-else-if="status === 'idle'" variant="primary" size="sm" @click="emit('request')"
         >Recommend a market</SJButton
       >
       <SJButton
@@ -94,12 +84,8 @@ const confidencePct = computed(() =>
     </div>
 
     <div v-else-if="status === 'error'" class="amp__error">
-      <p class="amp__error-text">
-        <span aria-hidden="true">⚠️</span> {{ errorMessage }}
-      </p>
-      <SJButton variant="secondary" size="sm" @click="emit('retry')"
-        >Retry</SJButton
-      >
+      <p class="amp__error-text"><span aria-hidden="true">⚠️</span> {{ errorMessage }}</p>
+      <SJButton variant="secondary" size="sm" @click="emit('retry')">Retry</SJButton>
     </div>
 
     <div v-else-if="status === 'success' && pick" class="amp__result">
@@ -124,9 +110,7 @@ const confidencePct = computed(() =>
         </div>
       </div>
       <p class="amp__rationale">{{ pick.rationale }}</p>
-      <p class="amp__disclaimer">
-        Highlighted in the list below. Not financial advice.
-      </p>
+      <p class="amp__disclaimer">Highlighted in the list below. Not financial advice.</p>
     </div>
   </section>
 </template>

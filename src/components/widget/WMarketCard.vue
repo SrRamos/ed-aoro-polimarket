@@ -24,9 +24,7 @@ const shown = computed(() =>
     .map((label, i) => ({ label, price: props.market.prices[i] ?? 0, i }))
     .slice(0, 4),
 )
-const hiddenCount = computed(() =>
-  Math.max(0, props.market.outcomes.length - shown.value.length),
-)
+const hiddenCount = computed(() => Math.max(0, props.market.outcomes.length - shown.value.length))
 </script>
 
 <template>
@@ -42,9 +40,7 @@ const hiddenCount = computed(() =>
         <div class="mc__headings">
           <div class="mc__badges">
             <SJBadge tone="neutral">{{ market.category }}</SJBadge>
-            <SJBadge v-if="market.closed" tone="warning" icon="●"
-              >Closed</SJBadge
-            >
+            <SJBadge v-if="market.closed" tone="warning" icon="●">Closed</SJBadge>
             <SJBadge v-else tone="success" icon="●">Open</SJBadge>
             <SJBadge v-if="market.pricingUnreliable" tone="error" icon="⚠"
               >Pricing unreliable</SJBadge

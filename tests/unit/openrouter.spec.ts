@@ -93,20 +93,35 @@ describe('extractJson (AC7.5 fence-strip / first-brace)', () => {
 describe('validatePrediction (AC7.6, AC7.10)', () => {
   const outcomes = ['Yes', 'No']
   it('accepts a verbatim outcome and clamps confidence to [0,1]', () => {
-    expect(validatePrediction({ recommendedOutcome: 'Yes', confidence: 1.5, rationale: 'x' }, outcomes))
-      .toEqual({ recommendedOutcome: 'Yes', confidence: 1, rationale: 'x' })
-    expect(validatePrediction({ recommendedOutcome: 'No', confidence: -0.2, rationale: 'x' }, outcomes))
-      .toEqual({ recommendedOutcome: 'No', confidence: 0, rationale: 'x' })
+    expect(
+      validatePrediction({ recommendedOutcome: 'Yes', confidence: 1.5, rationale: 'x' }, outcomes),
+    ).toEqual({ recommendedOutcome: 'Yes', confidence: 1, rationale: 'x' })
+    expect(
+      validatePrediction({ recommendedOutcome: 'No', confidence: -0.2, rationale: 'x' }, outcomes),
+    ).toEqual({ recommendedOutcome: 'No', confidence: 0, rationale: 'x' })
   })
   it('rejects an outcome not in the list (AC7.10)', () => {
-    expect(validatePrediction({ recommendedOutcome: 'Maybe', confidence: 0.5, rationale: 'x' }, outcomes)).toBeNull()
+    expect(
+      validatePrediction(
+        { recommendedOutcome: 'Maybe', confidence: 0.5, rationale: 'x' },
+        outcomes,
+      ),
+    ).toBeNull()
   })
   it('rejects a non-numeric confidence', () => {
-    expect(validatePrediction({ recommendedOutcome: 'Yes', confidence: 'high', rationale: 'x' }, outcomes)).toBeNull()
+    expect(
+      validatePrediction(
+        { recommendedOutcome: 'Yes', confidence: 'high', rationale: 'x' },
+        outcomes,
+      ),
+    ).toBeNull()
   })
   it('caps the rationale length', () => {
     const long = 'a'.repeat(2000)
-    const r = validatePrediction({ recommendedOutcome: 'Yes', confidence: 0.5, rationale: long }, outcomes)
+    const r = validatePrediction(
+      { recommendedOutcome: 'Yes', confidence: 0.5, rationale: long },
+      outcomes,
+    )
     expect(r!.rationale.length).toBeLessThanOrEqual(600)
   })
 })
@@ -114,11 +129,14 @@ describe('validatePrediction (AC7.6, AC7.10)', () => {
 describe('validateMarketPick (AC9.3)', () => {
   const ids = ['m1', 'm2']
   it('accepts an id in the presented set and clamps confidence', () => {
-    expect(validateMarketPick({ recommendedMarketId: 'm2', confidence: 2, rationale: 'x' }, ids))
-      .toEqual({ recommendedMarketId: 'm2', confidence: 1, rationale: 'x' })
+    expect(
+      validateMarketPick({ recommendedMarketId: 'm2', confidence: 2, rationale: 'x' }, ids),
+    ).toEqual({ recommendedMarketId: 'm2', confidence: 1, rationale: 'x' })
   })
   it('rejects an id not presented to the model', () => {
-    expect(validateMarketPick({ recommendedMarketId: 'zzz', confidence: 0.5, rationale: 'x' }, ids)).toBeNull()
+    expect(
+      validateMarketPick({ recommendedMarketId: 'zzz', confidence: 0.5, rationale: 'x' }, ids),
+    ).toBeNull()
   })
 })
 
@@ -164,7 +182,9 @@ describe('predictOutcome ladder (AC7.5, AC7.9, AC7.10)', () => {
   it('handles fence-wrapped content (json_object model)', async () => {
     mockFetch({
       models: MODELS_NO_STRUCTURED,
-      chats: [chatContent('```json\n{"recommendedOutcome":"Yes","confidence":0.6,"rationale":"r"}\n```')],
+      chats: [
+        chatContent('```json\n{"recommendedOutcome":"Yes","confidence":0.6,"rationale":"r"}\n```'),
+      ],
     })
     const result = await predictOutcome(market(), KEY)
     expect(result.recommendedOutcome).toBe('Yes')

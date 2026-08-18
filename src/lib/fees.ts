@@ -34,8 +34,7 @@ export function computeFees(
  * would source it from env/settings.
  */
 export const DEMO_BUILDER_CONFIG: BuilderConfig = {
-  builderCode:
-    '0x0000000000000000000000000000000000000000000000000000000000000000',
+  builderCode: '0x0000000000000000000000000000000000000000000000000000000000000000',
   builderTakerBps: 100,
   builderMakerBps: 50,
   platformBps: 0,

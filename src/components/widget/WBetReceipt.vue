@@ -32,8 +32,7 @@ const emit = defineEmits<WBetReceiptEmits>()
         <div class="toast__body">
           <p class="toast__title">Bet filled</p>
           <p class="toast__text">
-            {{ formatCurrency(props.size) }} on
-            <strong>{{ props.outcome }}</strong> · total
+            {{ formatCurrency(props.size) }} on <strong>{{ props.outcome }}</strong> · total
             {{ formatCurrency(props.total) }}
           </p>
           <p class="toast__tx">{{ props.txHash }}</p>

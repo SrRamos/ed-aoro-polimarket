@@ -36,10 +36,7 @@ const attempted = ref(false)
 
 const size = computed(() => Number.parseFloat(amount.value))
 const sizeValid = computed(
-  () =>
-    Number.isFinite(size.value) &&
-    size.value > 0 &&
-    size.value <= props.maxAmount,
+  () => Number.isFinite(size.value) && size.value > 0 && size.value <= props.maxAmount,
 )
 const hasOutcome = computed(() => !!props.outcome && props.price != null)
 
@@ -47,38 +44,28 @@ const cost = computed(() =>
   hasOutcome.value && sizeValid.value ? size.value * (props.price ?? 0) : 0,
 )
 const shares = computed(() =>
-  hasOutcome.value && sizeValid.value && props.price
-    ? size.value / props.price
-    : 0,
+  hasOutcome.value && sizeValid.value && props.price ? size.value / props.price : 0,
 )
 const payout = computed(() => shares.value * 1)
 
-const fees = computed(() =>
-  computeFees(cost.value, props.builderConfig, 'taker'),
-)
+const fees = computed(() => computeFees(cost.value, props.builderConfig, 'taker'))
 
 const amountError = computed(() => {
   if (!attempted.value && amount.value === '') return ''
   if (amount.value.trim() === '') return 'Enter an amount to bet.'
   if (!Number.isFinite(size.value)) return 'Amount must be a number.'
   if (size.value <= 0) return 'Amount must be greater than $0.'
-  if (size.value > props.maxAmount)
-    return `Amount can’t exceed ${formatCurrency(props.maxAmount)}.`
+  if (size.value > props.maxAmount) return `Amount can’t exceed ${formatCurrency(props.maxAmount)}.`
   return ''
 })
 
 const canSubmit = computed(
-  () =>
-    !props.disabled &&
-    !props.submitting &&
-    hasOutcome.value &&
-    sizeValid.value,
+  () => !props.disabled && !props.submitting && hasOutcome.value && sizeValid.value,
 )
 
 function submit() {
   attempted.value = true
-  if (!canSubmit.value || !props.tokenId || !props.outcome || props.price == null)
-    return
+  if (!canSubmit.value || !props.tokenId || !props.outcome || props.price == null) return
   emit('place', {
     marketId: props.marketId,
     tokenId: props.tokenId,
@@ -102,14 +89,11 @@ defineExpose({
   <form class="bf" novalidate @submit.prevent="submit">
     <!-- Closed market notice — reason conveyed by text (AC4.5). -->
     <p v-if="disabled" class="bf__closed" role="note">
-      <span aria-hidden="true">🔒</span> This market is closed. Betting is
-      disabled.
+      <span aria-hidden="true">🔒</span> This market is closed. Betting is disabled.
     </p>
 
     <!-- No outcome selected (AC5.5). -->
-    <p v-else-if="!hasOutcome" class="bf__hint">
-      Select an outcome above to build your bet.
-    </p>
+    <p v-else-if="!hasOutcome" class="bf__hint">Select an outcome above to build your bet.</p>
 
     <template v-if="!disabled && hasOutcome">
       <div class="bf__selected">
@@ -160,11 +144,15 @@ defineExpose({
             <dd>{{ formatCurrency(fees.notional) }}</dd>
           </div>
           <div class="bf__row">
-            <dt>Builder fee <span class="bf__formula">({{ fees.builderBps }} bps)</span></dt>
+            <dt>
+              Builder fee <span class="bf__formula">({{ fees.builderBps }} bps)</span>
+            </dt>
             <dd>{{ formatCurrency(fees.builderFee) }}</dd>
           </div>
           <div class="bf__row">
-            <dt>Platform fee <span class="bf__formula">({{ fees.platformBps }} bps)</span></dt>
+            <dt>
+              Platform fee <span class="bf__formula">({{ fees.platformBps }} bps)</span>
+            </dt>
             <dd>{{ formatCurrency(fees.platformFee) }}</dd>
           </div>
           <div class="bf__row bf__row--total">
@@ -179,13 +167,7 @@ defineExpose({
     </template>
 
     <div class="bf__cta">
-      <SJButton
-        type="submit"
-        variant="primary"
-        block
-        :disabled="!canSubmit"
-        :loading="submitting"
-      >
+      <SJButton type="submit" variant="primary" block :disabled="!canSubmit" :loading="submitting">
         {{ submitting ? 'Placing bet…' : 'Place bet' }}
       </SJButton>
     </div>
@@ -309,12 +291,7 @@ defineExpose({
   bottom: 0;
   padding-top: var(--space-3);
   padding-bottom: var(--space-1);
-  background: linear-gradient(
-    to top,
-    var(--color-surface),
-    var(--color-surface) 70%,
-    transparent
-  );
+  background: linear-gradient(to top, var(--color-surface), var(--color-surface) 70%, transparent);
 }
 
 @media (min-width: 769px) {

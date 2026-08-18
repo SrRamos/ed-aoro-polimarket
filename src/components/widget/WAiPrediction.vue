@@ -59,9 +59,7 @@ const confidencePct = computed(() =>
 
     <!-- No key (AC7.2) -->
     <div v-if="!hasKey" class="ai__cta">
-      <p class="ai__cta-text">
-        Add your OpenRouter API key in Settings to enable AI suggestions.
-      </p>
+      <p class="ai__cta-text">Add your OpenRouter API key in Settings to enable AI suggestions.</p>
       <SJButton variant="secondary" size="sm" @click="emit('open-settings')"
         >Open Settings</SJButton
       >
@@ -69,12 +67,8 @@ const confidencePct = computed(() =>
 
     <!-- Idle / trigger (AC7.3) -->
     <div v-else-if="status === 'idle'" class="ai__idle">
-      <p class="ai__idle-text">
-        Get a data-grounded second opinion on which outcome to pick.
-      </p>
-      <SJButton variant="primary" size="sm" @click="emit('request')"
-        >Get AI suggestion</SJButton
-      >
+      <p class="ai__idle-text">Get a data-grounded second opinion on which outcome to pick.</p>
+      <SJButton variant="primary" size="sm" @click="emit('request')">Get AI suggestion</SJButton>
     </div>
 
     <!-- Loading (AC7.7) -->
@@ -85,12 +79,8 @@ const confidencePct = computed(() =>
 
     <!-- Error (AC7.9) -->
     <div v-else-if="status === 'error'" class="ai__error">
-      <p class="ai__error-text">
-        <span aria-hidden="true">⚠️</span> {{ errorMessage }}
-      </p>
-      <SJButton variant="secondary" size="sm" @click="emit('retry')"
-        >Retry</SJButton
-      >
+      <p class="ai__error-text"><span aria-hidden="true">⚠️</span> {{ errorMessage }}</p>
+      <SJButton variant="secondary" size="sm" @click="emit('retry')">Retry</SJButton>
     </div>
 
     <!-- Success (AC7.8) -->

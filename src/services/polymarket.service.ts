@@ -10,8 +10,7 @@ import type { Market, RawGammaMarket } from '../models/market'
 import { buildQuery, fetchJson } from './http'
 
 export const GAMMA_BASE_URL: string =
-  (import.meta.env.VITE_GAMMA_BASE_URL as string | undefined) ??
-  'https://gamma-api.polymarket.com'
+  (import.meta.env.VITE_GAMMA_BASE_URL as string | undefined) ?? 'https://gamma-api.polymarket.com'
 
 /** Reads: short retry so a flaky network/5xx gets one more shot before falling back. */
 const READ_RETRY = { attempts: 2, backoffMs: 300 }
@@ -50,12 +49,36 @@ function toFiniteNumber(value: unknown): number {
  * their look without a redesign. Best-effort only — documented discrepancy.
  */
 const CATEGORY_RULES: Array<{ category: string; image: string; test: RegExp }> = [
-  { category: 'Crypto', image: '₿', test: /\b(bitcoin|btc|ethereum|eth|crypto|solana|xrp|doge|coin|token|blockchain)\b/i },
-  { category: 'Politics', image: '🏛️', test: /\b(president|election|senate|congress|primary|vote|governor|parliament|prime minister|democrat|republican|trump|biden)\b/i },
-  { category: 'Economics', image: '🏦', test: /\b(fed|rate cut|inflation|gdp|recession|interest rate|unemployment|cpi|economy)\b/i },
-  { category: 'Sports', image: '🏆', test: /\b(super bowl|nba|nfl|world cup|champions league|premier league|final|cup|playoff|qualify|match|game|win the|team|series)\b/i },
-  { category: 'Tech', image: '🤖', test: /\b(openai|gpt|ai|apple|google|tesla|spacex|nvidia|chip|model|launch|release)\b/i },
-  { category: 'Entertainment', image: '🎬', test: /\b(oscar|movie|film|album|grammy|box office|netflix|show|season)\b/i },
+  {
+    category: 'Crypto',
+    image: '₿',
+    test: /\b(bitcoin|btc|ethereum|eth|crypto|solana|xrp|doge|coin|token|blockchain)\b/i,
+  },
+  {
+    category: 'Politics',
+    image: '🏛️',
+    test: /\b(president|election|senate|congress|primary|vote|governor|parliament|prime minister|democrat|republican|trump|biden)\b/i,
+  },
+  {
+    category: 'Economics',
+    image: '🏦',
+    test: /\b(fed|rate cut|inflation|gdp|recession|interest rate|unemployment|cpi|economy)\b/i,
+  },
+  {
+    category: 'Sports',
+    image: '🏆',
+    test: /\b(super bowl|nba|nfl|world cup|champions league|premier league|final|cup|playoff|qualify|match|game|win the|team|series)\b/i,
+  },
+  {
+    category: 'Tech',
+    image: '🤖',
+    test: /\b(openai|gpt|ai|apple|google|tesla|spacex|nvidia|chip|model|launch|release)\b/i,
+  },
+  {
+    category: 'Entertainment',
+    image: '🎬',
+    test: /\b(oscar|movie|film|album|grammy|box office|netflix|show|season)\b/i,
+  },
 ]
 
 function deriveCategoryAndImage(question: string): { category: string; image: string } {
@@ -150,9 +173,7 @@ export async function getMarkets(
     signal: opts?.signal,
   })
   const list = Array.isArray(raw) ? raw : []
-  return list
-    .map((m) => normalizeMarket(m))
-    .filter((m): m is Market => m !== null)
+  return list.map((m) => normalizeMarket(m)).filter((m): m is Market => m !== null)
 }
 
 interface PublicSearchResponse {

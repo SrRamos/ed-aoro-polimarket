@@ -44,9 +44,7 @@ describe('normalizeMarket', () => {
   // AC1.4 — malformed markets excluded (return null), never throw.
   describe('malformed → excluded via null, never throws (AC1.4)', () => {
     it('missing field', () => {
-      expect(
-        normalizeMarket(rawMarket({ outcomes: undefined as unknown as string })),
-      ).toBeNull()
+      expect(normalizeMarket(rawMarket({ outcomes: undefined as unknown as string }))).toBeNull()
     })
 
     it('non-JSON string', () => {
@@ -63,16 +61,12 @@ describe('normalizeMarket', () => {
 
     it('empty outcomes array', () => {
       expect(
-        normalizeMarket(
-          rawMarket({ outcomes: '[]', outcomePrices: '[]', clobTokenIds: '[]' }),
-        ),
+        normalizeMarket(rawMarket({ outcomes: '[]', outcomePrices: '[]', clobTokenIds: '[]' })),
       ).toBeNull()
     })
 
     it('does not throw on garbage input', () => {
-      expect(() =>
-        normalizeMarket({ id: 'x', question: 'q' } as RawGammaMarket),
-      ).not.toThrow()
+      expect(() => normalizeMarket({ id: 'x', question: 'q' } as RawGammaMarket)).not.toThrow()
       expect(normalizeMarket({ id: 'x', question: 'q' } as RawGammaMarket)).toBeNull()
     })
   })

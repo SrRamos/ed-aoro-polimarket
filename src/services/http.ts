@@ -28,13 +28,7 @@ const DEFAULT_TIMEOUT_MS = 8000
 const DEFAULT_RETRY = { attempts: 1, backoffMs: 0 }
 
 export function isHttpError(e: unknown): e is HttpError {
-  return (
-    typeof e === 'object' &&
-    e !== null &&
-    'kind' in e &&
-    'message' in e &&
-    'url' in e
-  )
+  return typeof e === 'object' && e !== null && 'kind' in e && 'message' in e && 'url' in e
 }
 
 /** Builds a query string (leading `?`), skipping undefined/null values. */
@@ -118,7 +112,11 @@ async function attemptFetch<T>(url: string, init: AttemptInit): Promise<T> {
     // Aborted: distinguish caller-cancellation from our own timeout.
     if (err instanceof DOMException && err.name === 'AbortError') {
       if (timedOut) {
-        throw { kind: 'timeout', message: `Request timed out after ${timeoutMs}ms`, url } satisfies HttpError
+        throw {
+          kind: 'timeout',
+          message: `Request timed out after ${timeoutMs}ms`,
+          url,
+        } satisfies HttpError
       }
       // Caller cancelled (debounce supersede) — re-throw the abort so the
       // caller can detect it via signal.aborted and skip state updates.

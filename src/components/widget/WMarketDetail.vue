@@ -65,21 +65,14 @@ const selectedTokenId = computed(() =>
 </script>
 
 <template>
-  <SJModal
-    :open="open"
-    :title="market?.question ?? 'Market'"
-    size="lg"
-    @close="emit('close')"
-  >
+  <SJModal :open="open" :title="market?.question ?? 'Market'" size="lg" @close="emit('close')">
     <div v-if="market" class="md">
       <!-- Meta -->
       <div class="md__meta">
         <SJBadge tone="neutral">{{ market.category }}</SJBadge>
         <SJBadge v-if="market.closed" tone="warning" icon="●">Closed</SJBadge>
         <SJBadge v-else tone="success" icon="●">Open for betting</SJBadge>
-        <SJBadge v-if="market.pricingUnreliable" tone="error" icon="⚠"
-          >Pricing unreliable</SJBadge
-        >
+        <SJBadge v-if="market.pricingUnreliable" tone="error" icon="⚠">Pricing unreliable</SJBadge>
       </div>
 
       <dl class="md__stats">
@@ -94,30 +87,21 @@ const selectedTokenId = computed(() =>
       </dl>
 
       <!-- Outcomes (AC4.1–AC4.3) -->
-      <div
-        class="md__outcomes"
-        role="radiogroup"
-        aria-label="Choose an outcome"
-      >
+      <div class="md__outcomes" role="radiogroup" aria-label="Choose an outcome">
         <button
           v-for="(o, i) in market.outcomes"
           :key="o"
           type="button"
           role="radio"
           class="oc-btn"
-          :class="[
-            `oc-btn--${outcomeTone(o)}`,
-            { 'oc-btn--selected': selectedIndex === i },
-          ]"
+          :class="[`oc-btn--${outcomeTone(o)}`, { 'oc-btn--selected': selectedIndex === i }]"
           :aria-checked="selectedIndex === i"
           @click="emit('select-outcome', i)"
         >
           <span class="oc-btn__dot" aria-hidden="true" />
           <span class="oc-btn__name">{{ o }}</span>
           <span class="oc-btn__pct">{{ formatPercent(market.prices[i] ?? 0) }}</span>
-          <span v-if="selectedIndex === i" class="oc-btn__check" aria-hidden="true"
-            >✓</span
-          >
+          <span v-if="selectedIndex === i" class="oc-btn__check" aria-hidden="true">✓</span>
           <span v-if="selectedIndex === i" class="sr-only">Selected</span>
         </button>
       </div>

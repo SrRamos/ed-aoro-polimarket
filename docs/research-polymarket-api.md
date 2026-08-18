@@ -12,27 +12,27 @@
 
 ### Endpoints
 
-| Propósito | Endpoint |
-|---|---|
-| Listar/filtrar mercados | `GET /markets` |
-| Mercado por id | `GET /markets/{id}` |
-| Mercado por slug | `GET /markets/slug/{slug}` |
-| Listar/filtrar eventos | `GET /events` |
-| **Full-text search** | `GET /public-search` |
+| Propósito               | Endpoint                   |
+| ----------------------- | -------------------------- |
+| Listar/filtrar mercados | `GET /markets`             |
+| Mercado por id          | `GET /markets/{id}`        |
+| Mercado por slug        | `GET /markets/slug/{slug}` |
+| Listar/filtrar eventos  | `GET /events`              |
+| **Full-text search**    | `GET /public-search`       |
 
 ### Query params clave (`/markets`, `/events`)
 
-| Param | Significado |
-|---|---|
-| `limit`, `offset` | Paginación |
-| `order` | `volume`, `volume24hr`, `liquidity`, `startDate`, `endDate` |
-| `ascending` | Dirección (default `false`) |
-| `active` | Solo tradables/no resueltos |
-| `closed` | Resueltos |
-| `tag_id` / `tag_slug` | Categoría |
-| `liquidity_num_min/_max`, `volume_num_min/_max` | Bandas |
-| `clob_token_ids`, `condition_ids` | Lookup |
-| `enableOrderBook` | Solo CLOB-tradables |
+| Param                                           | Significado                                                 |
+| ----------------------------------------------- | ----------------------------------------------------------- |
+| `limit`, `offset`                               | Paginación                                                  |
+| `order`                                         | `volume`, `volume24hr`, `liquidity`, `startDate`, `endDate` |
+| `ascending`                                     | Dirección (default `false`)                                 |
+| `active`                                        | Solo tradables/no resueltos                                 |
+| `closed`                                        | Resueltos                                                   |
+| `tag_id` / `tag_slug`                           | Categoría                                                   |
+| `liquidity_num_min/_max`, `volume_num_min/_max` | Bandas                                                      |
+| `clob_token_ids`, `condition_ids`               | Lookup                                                      |
+| `enableOrderBook`                               | Solo CLOB-tradables                                         |
 
 > **Version note:** existe variante keyset (`/markets/keyset` con `after_cursor`) donde `offset` puede dar **422**. El clásico `limit`+`offset` es el default seguro; si aparece 422, cambiar a cursor.
 
@@ -48,23 +48,29 @@
   "question": "Will Bitcoin exceed $100,000 by end of 2025?",
   "slug": "bitcoin-above-100k-2025",
   "conditionId": "0x1234abc...",
-  "outcomes": "[\"Yes\", \"No\"]",             // STRING JSON-encoded
-  "outcomePrices": "[\"0.62\", \"0.38\"]",     // STRING JSON-encoded, 0..1 = prob implícita
-  "clobTokenIds": "[\"7190...\", \"2836...\"]",// STRING JSON-encoded; [YES tokenId, NO tokenId]
-  "volume": "5250000", "volumeNum": 5250000,
-  "liquidity": "125000", "liquidityNum": 125000,
+  "outcomes": "[\"Yes\", \"No\"]", // STRING JSON-encoded
+  "outcomePrices": "[\"0.62\", \"0.38\"]", // STRING JSON-encoded, 0..1 = prob implícita
+  "clobTokenIds": "[\"7190...\", \"2836...\"]", // STRING JSON-encoded; [YES tokenId, NO tokenId]
+  "volume": "5250000",
+  "volumeNum": 5250000,
+  "liquidity": "125000",
+  "liquidityNum": 125000,
   "endDate": "2025-12-31T23:59:59Z",
-  "image": "https://...", "icon": "https://...",
-  "active": true, "closed": false, "enableOrderBook": true, "negRisk": false
+  "image": "https://...",
+  "icon": "https://...",
+  "active": true,
+  "closed": false,
+  "enableOrderBook": true,
+  "negRisk": false,
 }
 ```
 
 **⚠️ Gotcha crítico (#1 bug de integración):** `outcomes`, `outcomePrices`, `clobTokenIds` vienen como **strings JSON-encoded**, no arrays. Hay que `JSON.parse()`. Están alineados posicionalmente 1:1:
 
 ```js
-const outcomes = JSON.parse(m.outcomes);       // ["Yes","No"]
-const prices   = JSON.parse(m.outcomePrices);  // ["0.62","0.38"] -> 62%/38%
-const tokenIds = JSON.parse(m.clobTokenIds);   // [yesTokenId, noTokenId]
+const outcomes = JSON.parse(m.outcomes) // ["Yes","No"]
+const prices = JSON.parse(m.outcomePrices) // ["0.62","0.38"] -> 62%/38%
+const tokenIds = JSON.parse(m.clobTokenIds) // [yesTokenId, noTokenId]
 // outcomes[i] <-> prices[i] <-> tokenIds[i]
 ```
 
@@ -93,13 +99,13 @@ https://gamma-api.polymarket.com/markets/slug/bitcoin-above-100k-2025
 
 ### Read endpoints públicos (SIN auth) — precios en vivo
 
-| Endpoint | Params | Devuelve |
-|---|---|---|
-| `GET /book` | `token_id` | `bids`+`asks`, `tick_size`, `neg_risk` |
-| `GET /price` | `token_id`, `side=BUY\|SELL` | Mejor precio de un lado |
-| `GET /midpoint` | `token_id` | Midpoint |
-| `GET /prices-history` | `market`, `startTs`, `endTs`, `interval` | Serie histórica (chart) |
-| `GET /tick-size` | `token_id` | Incremento mínimo |
+| Endpoint              | Params                                   | Devuelve                               |
+| --------------------- | ---------------------------------------- | -------------------------------------- |
+| `GET /book`           | `token_id`                               | `bids`+`asks`, `tick_size`, `neg_risk` |
+| `GET /price`          | `token_id`, `side=BUY\|SELL`             | Mejor precio de un lado                |
+| `GET /midpoint`       | `token_id`                               | Midpoint                               |
+| `GET /prices-history` | `market`, `startTs`, `endTs`, `interval` | Serie histórica (chart)                |
+| `GET /tick-size`      | `token_id`                               | Incremento mínimo                      |
 
 El `token_id` es un valor del `clobTokenIds` parseado. **Flujo:** Gamma da `clobTokenIds` → CLOB `/book` o `/price` da el precio tradable en vivo. También sin auth y CORS-accesibles. El `outcomePrices` de Gamma ya es snapshot suficiente para el MVP; CLOB `/price` es el quote live opcional.
 
@@ -128,23 +134,24 @@ El `token_id` es un valor del `clobTokenIds` parseado. **Flujo:** Gamma da `clob
 
 ## Arquitectura recomendada (48h) — DECISIÓN
 
-| Capacidad | Implementación | Real/Mock |
-|---|---|---|
-| Buscar mercados | Gamma `GET /public-search?q=` | **REAL** |
-| Listar/browse | Gamma `GET /markets?closed=false&active=true&order=volume&limit=20` | **REAL** |
-| Detalle + outcomes | Gamma `GET /markets/slug/{slug}` + parse | **REAL** |
-| Precio en vivo / book | CLOB `GET /price` o `/book` | **REAL** (opcional; snapshot Gamma basta MVP) |
-| **Colocar apuesta** | `BettingService.placeBet()` → fill simulado; posiciones en Pinia+localStorage | **MOCK** con interfaz swappable |
+| Capacidad             | Implementación                                                                | Real/Mock                                     |
+| --------------------- | ----------------------------------------------------------------------------- | --------------------------------------------- |
+| Buscar mercados       | Gamma `GET /public-search?q=`                                                 | **REAL**                                      |
+| Listar/browse         | Gamma `GET /markets?closed=false&active=true&order=volume&limit=20`           | **REAL**                                      |
+| Detalle + outcomes    | Gamma `GET /markets/slug/{slug}` + parse                                      | **REAL**                                      |
+| Precio en vivo / book | CLOB `GET /price` o `/book`                                                   | **REAL** (opcional; snapshot Gamma basta MVP) |
+| **Colocar apuesta**   | `BettingService.placeBet()` → fill simulado; posiciones en Pinia+localStorage | **MOCK** con interfaz swappable               |
 
 ```ts
 interface BettingService {
-  placeBet(o: BetOrder): Promise<BetReceipt>;   // { tokenId, outcome, side, size, priceLimit }
+  placeBet(o: BetOrder): Promise<BetReceipt> // { tokenId, outcome, side, size, priceLimit }
 }
 // MockBettingService -> valida vs precio live, simula fill, guarda posición
 // ClobBettingService -> (futuro) wallet signing + L1/L2 + POST /order, server-side
 ```
 
 **Notas de build:**
+
 - Cero API keys / `.env` secrets para todo el path real — todo es GET público.
 - Manejar los **arrays string JSON-encoded** (`JSON.parse`) — el bug #1.
 - Vite dev proxy listo como fallback CORS, pero fetch directo debería funcionar.

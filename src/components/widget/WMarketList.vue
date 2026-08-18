@@ -38,9 +38,7 @@ const emit = defineEmits<WMarketListEmits>()
     <div class="wl__bar">
       <h2 id="wl-heading" class="wl__heading">
         {{ heading }}
-        <span v-if="status === 'success'" class="wl__count"
-          >({{ markets.length }})</span
-        >
+        <span v-if="status === 'success'" class="wl__count">({{ markets.length }})</span>
       </h2>
       <slot name="toolbar" />
     </div>

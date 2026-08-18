@@ -24,9 +24,7 @@ function toneFor(outcome: string) {
   <section class="wp" aria-labelledby="wp-heading">
     <h2 id="wp-heading" class="wp__heading">
       Your positions
-      <span v-if="positions.length" class="wp__count"
-        >({{ positions.length }})</span
-      >
+      <span v-if="positions.length" class="wp__count">({{ positions.length }})</span>
     </h2>
 
     <!-- First-run empty state (AC6.3) -->
@@ -35,8 +33,8 @@ function toneFor(outcome: string) {
         <span class="wp__empty-icon" aria-hidden="true">🎟️</span>
         <p class="wp__empty-title">No bets placed yet</p>
         <p class="wp__empty-text">
-          Open a market, pick an outcome, and place a simulated bet. Your
-          positions appear here and persist across reloads.
+          Open a market, pick an outcome, and place a simulated bet. Your positions appear here and
+          persist across reloads.
         </p>
       </div>
     </SJCard>
@@ -47,9 +45,7 @@ function toneFor(outcome: string) {
           <article class="pos">
             <header class="pos__head">
               <h3 class="pos__question">{{ p.marketQuestion }}</h3>
-              <SJBadge :tone="toneFor(p.outcome)" icon="●">{{
-                p.outcome
-              }}</SJBadge>
+              <SJBadge :tone="toneFor(p.outcome)" icon="●">{{ p.outcome }}</SJBadge>
             </header>
 
             <dl class="pos__grid">
@@ -84,16 +80,12 @@ function toneFor(outcome: string) {
                 >Platform fee ({{ p.receipt.fees.platformBps }} bps):
                 {{ formatCurrency(p.receipt.fees.platformFee) }}</span
               >
-              <span class="pos__fees-total"
-                >Total: {{ formatCurrency(p.receipt.fees.total) }}</span
-              >
+              <span class="pos__fees-total">Total: {{ formatCurrency(p.receipt.fees.total) }}</span>
             </div>
 
             <p class="pos__builder">
               <span class="pos__builder-label">builderCode</span>
-              <code :title="p.receipt.builderCode">{{
-                p.receipt.builderCode
-              }}</code>
+              <code :title="p.receipt.builderCode">{{ p.receipt.builderCode }}</code>
             </p>
           </article>
         </SJCard>

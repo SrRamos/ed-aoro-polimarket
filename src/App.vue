@@ -190,15 +190,11 @@ const ampPick = ref<AiMarketPick | null>(null)
 const ampError = ref<string | null>(null)
 
 const recommendedMarketId = computed(() =>
-  ampStatus.value === 'success' && ampPick.value
-    ? ampPick.value.recommendedMarketId
-    : null,
+  ampStatus.value === 'success' && ampPick.value ? ampPick.value.recommendedMarketId : null,
 )
 const recommendedQuestion = computed(() => {
   const id = recommendedMarketId.value
-  return id
-    ? (marketsStore.displayedMarkets.find((m) => m.id === id)?.question ?? null)
-    : null
+  return id ? (marketsStore.displayedMarkets.find((m) => m.id === id)?.question ?? null) : null
 })
 
 async function requestAiMarketPick() {
@@ -271,17 +267,13 @@ onBeforeUnmount(() => {
         <div>
           <h1 class="app__title">Polymarket Widget</h1>
           <p class="app__tagline">
-            Search prediction markets, place a builder-aware simulated bet, and
-            track positions.
+            Search prediction markets, place a builder-aware simulated bet, and track positions.
           </p>
         </div>
       </div>
 
       <div class="app__actions">
-        <span
-          class="app__ai-flag"
-          :class="hasKey ? 'app__ai-flag--on' : 'app__ai-flag--off'"
-        >
+        <span class="app__ai-flag" :class="hasKey ? 'app__ai-flag--on' : 'app__ai-flag--off'">
           <span aria-hidden="true">{{ hasKey ? '●' : '○' }}</span>
           AI {{ hasKey ? 'on' : 'off' }}
         </span>
@@ -328,9 +320,7 @@ onBeforeUnmount(() => {
 
       <p v-if="usingFallback" class="app__fallback" role="status">
         <SJBadge tone="warning" icon="⚠">Sample data</SJBadge>
-        <span
-          >Showing sample data — live Polymarket is unreachable right now.</span
-        >
+        <span>Showing sample data — live Polymarket is unreachable right now.</span>
       </p>
 
       <WMarketList
@@ -349,9 +339,9 @@ onBeforeUnmount(() => {
 
     <footer class="app__footer">
       <p>
-        Demo build · market data is real (Polymarket Gamma, sample fallback if
-        unreachable) · bets are simulated (mock <code>BettingService</code>) ·
-        AI is opt-in via your OpenRouter key. Not financial advice.
+        Demo build · market data is real (Polymarket Gamma, sample fallback if unreachable) · bets
+        are simulated (mock <code>BettingService</code>) · AI is opt-in via your OpenRouter key. Not
+        financial advice.
       </p>
     </footer>
   </div>

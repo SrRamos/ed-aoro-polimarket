@@ -42,8 +42,8 @@ function save() {
       <section class="set__section">
         <h3 class="set__label">OpenRouter API key</h3>
         <p class="set__desc">
-          Optional. Enables the AI suggestion features (outcome + market picks)
-          using free OpenRouter models.
+          Optional. Enables the AI suggestion features (outcome + market picks) using free
+          OpenRouter models.
         </p>
 
         <SJInput
@@ -55,18 +55,13 @@ function save() {
           help="Paste your key from openrouter.ai/keys."
         />
 
-        <div
-          class="set__disclaimer"
-          role="note"
-          aria-label="Security disclaimer"
-        >
+        <div class="set__disclaimer" role="note" aria-label="Security disclaimer">
           <span class="set__disclaimer-icon" aria-hidden="true">🔐</span>
           <p>
-            Your key is stored <strong>locally in this browser</strong>
-            (localStorage) and is sent <strong>directly to OpenRouter</strong>
-            only when you request a suggestion. It is never logged, never placed
-            in a URL, and never sent anywhere else. No key is bundled with this
-            app.
+            Your key is stored <strong>locally in this browser</strong> (localStorage) and is sent
+            <strong>directly to OpenRouter</strong>
+            only when you request a suggestion. It is never logged, never placed in a URL, and never
+            sent anywhere else. No key is bundled with this app.
           </p>
         </div>
       </section>
@@ -76,20 +71,14 @@ function save() {
           <span aria-hidden="true">●</span> AI features are enabled.
         </span>
         <span v-else class="set__status-off">
-          <span aria-hidden="true">○</span> AI features are disabled (no key
-          set).
+          <span aria-hidden="true">○</span> AI features are disabled (no key set).
         </span>
       </div>
     </div>
 
     <template #footer>
       <div class="set__actions">
-        <SJButton
-          v-if="apiKey"
-          variant="ghost"
-          @click="emit('clear')"
-          >Clear key</SJButton
-        >
+        <SJButton v-if="apiKey" variant="ghost" @click="emit('clear')">Clear key</SJButton>
         <SJButton variant="secondary" @click="emit('close')">Cancel</SJButton>
         <SJButton variant="primary" :disabled="draft.trim() === ''" @click="save"
           >Save key</SJButton

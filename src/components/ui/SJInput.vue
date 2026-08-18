@@ -41,9 +41,7 @@ const errorId = `${inputId}-error`
   <div class="sj-field" :class="{ 'sj-field--invalid': !!props.error }">
     <label class="sj-field__label" :for="inputId">
       {{ props.label }}
-      <span v-if="props.required" class="sj-field__req" aria-hidden="true"
-        >*</span
-      >
+      <span v-if="props.required" class="sj-field__req" aria-hidden="true">*</span>
     </label>
 
     <div class="sj-field__control" :class="{ 'sj-field__control--prefixed': !!props.prefix }">
@@ -65,9 +63,8 @@ const errorId = `${inputId}-error`
         :step="props.step"
         :aria-invalid="props.error ? 'true' : undefined"
         :aria-describedby="
-          [props.help ? helpId : '', props.error ? errorId : '']
-            .filter(Boolean)
-            .join(' ') || undefined
+          [props.help ? helpId : '', props.error ? errorId : ''].filter(Boolean).join(' ') ||
+          undefined
         "
       />
     </div>

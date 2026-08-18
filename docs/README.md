@@ -2,14 +2,14 @@
 
 Research y análisis inicial del coding challenge (Vue 3 + RamosLabs DS, enfoque SDD).
 
-| Documento | Contenido |
-|---|---|
-| [`analysis-and-architecture.md`](./analysis-and-architecture.md) | **Empezar aquí.** Decisiones, stack, arquitectura de carpetas, contratos de servicios, UX, flujo SDD, riesgos |
-| [`research-polymarket-api.md`](./research-polymarket-api.md) | Gamma API (búsqueda/datos), CLOB (order book/apuestas), auth, CORS, geoblock, qué es real vs mock |
-| [`research-polymarket-product.md`](./research-polymarket-product.md) | Producto/UX: qué es un "widget" (embed oficial solo-lectura vs SPA custom vs builder), anatomía de cards/mercados, programa Builder, patrones visuales a imitar |
+| Documento                                                                      | Contenido                                                                                                                                                                              |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`analysis-and-architecture.md`](./analysis-and-architecture.md)               | **Empezar aquí.** Decisiones, stack, arquitectura de carpetas, contratos de servicios, UX, flujo SDD, riesgos                                                                          |
+| [`research-polymarket-api.md`](./research-polymarket-api.md)                   | Gamma API (búsqueda/datos), CLOB (order book/apuestas), auth, CORS, geoblock, qué es real vs mock                                                                                      |
+| [`research-polymarket-product.md`](./research-polymarket-product.md)           | Producto/UX: qué es un "widget" (embed oficial solo-lectura vs SPA custom vs builder), anatomía de cards/mercados, programa Builder, patrones visuales a imitar                        |
 | [`research-polymarket-sdks-builder.md`](./research-polymarket-sdks-builder.md) | SDKs oficiales (CLOB V2, `@polymarket/client`), Builder Program: builder code `bytes32` + fees additivas, firma L1+Order, viabilidad browser-only, blockers (geoblock/fondos/Verified) |
-| [`research-openrouter-ai.md`](./research-openrouter-ai.md) | OpenRouter chat API, modelos free, salida JSON estructurada, prompt, seguridad de la key |
-| [`research-ramoslabs-ds.md`](./research-ramoslabs-ds.md) | `@ramoslabs/tokens`: consumo, tokens reales, convenciones de componentes, reglas duras |
+| [`research-openrouter-ai.md`](./research-openrouter-ai.md)                     | OpenRouter chat API, modelos free, salida JSON estructurada, prompt, seguridad de la key                                                                                               |
+| [`research-ramoslabs-ds.md`](./research-ramoslabs-ds.md)                       | `@ramoslabs/tokens`: consumo, tokens reales, convenciones de componentes, reglas duras                                                                                                 |
 
 ## TL;DR
 

@@ -35,7 +35,9 @@ let service: BettingService | null = null
 function bettingService(): BettingService {
   if (!service) {
     const override = useSettingsStore().builderCodeOverride
-    service = createBettingService(getBuilderConfig(override ? { builderCode: override } : undefined))
+    service = createBettingService(
+      getBuilderConfig(override ? { builderCode: override } : undefined),
+    )
   }
   return service
 }

@@ -162,9 +162,9 @@ export const MARKETS: Market[] = SEEDS.map((s) => ({
 }))
 
 /** Default browse list = active, non-closed, top-by-volume descending (AC3.1). */
-export const DEFAULT_MARKETS: Market[] = MARKETS.filter(
-  (m) => m.active && !m.closed,
-).sort((a, b) => b.volume - a.volume)
+export const DEFAULT_MARKETS: Market[] = MARKETS.filter((m) => m.active && !m.closed).sort(
+  (a, b) => b.volume - a.volume,
+)
 
 /**
  * Canned AI outcome prediction per market id (US7). `recommendedOutcome` is a
@@ -216,8 +216,7 @@ export const AI_PREDICTIONS: Record<string, AiPrediction> = {
   '8': {
     recommendedOutcome: 'No',
     confidence: 0.9,
-    rationale:
-      'Market is resolved: two consecutive negative GDP quarters did not occur in 2025.',
+    rationale: 'Market is resolved: two consecutive negative GDP quarters did not occur in 2025.',
   },
 }
 

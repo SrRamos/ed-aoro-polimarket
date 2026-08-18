@@ -17,12 +17,12 @@
 
 ### Headers
 
-| Header | ¿Requerido? | Propósito |
-|---|---|---|
-| `Authorization: Bearer <OPENROUTER_API_KEY>` | **Sí** | Auth |
-| `Content-Type: application/json` | **Sí** | JSON body |
-| `HTTP-Referer: <your-site-url>` | Recomendado | Atribución en dashboard |
-| `X-Title: <your-app-name>` | Recomendado | Nombre legible en dashboard |
+| Header                                       | ¿Requerido? | Propósito                   |
+| -------------------------------------------- | ----------- | --------------------------- |
+| `Authorization: Bearer <OPENROUTER_API_KEY>` | **Sí**      | Auth                        |
+| `Content-Type: application/json`             | **Sí**      | JSON body                   |
+| `HTTP-Referer: <your-site-url>`              | Recomendado | Atribución en dashboard     |
+| `X-Title: <your-app-name>`                   | Recomendado | Nombre legible en dashboard |
 
 ### Request body
 
@@ -31,12 +31,12 @@
   "model": "z-ai/glm-5.2:free",
   "messages": [
     { "role": "system", "content": "..." },
-    { "role": "user",   "content": "..." }
+    { "role": "user", "content": "..." },
   ],
-  "temperature": 0.2,        // 0–2; BAJO para salida disciplinada
+  "temperature": 0.2, // 0–2; BAJO para salida disciplinada
   "max_tokens": 400,
-  "response_format": { /* ver §1.3 */ },
-  "stream": false
+  "response_format": {/* ver §1.3 */},
+  "stream": false,
 }
 ```
 
@@ -72,9 +72,10 @@ El texto del modelo siempre está en `response.choices[0].message.content` (stri
 `https://openrouter.ai/models?supported_parameters=structured_outputs`
 
 **Estrategia de parseo robusta (ladder de degradación):**
+
 1. `json_schema` si el modelo anuncia `structured_outputs`.
 2. Si no, `json_object` + instrucción "responde SOLO este JSON".
-3. En fallo de parseo: quitar code-fences ```` ```json ````, extraer primer bloque `{…}`, `JSON.parse()`, validar keys, clamp `confidence` a `[0,1]`. Reintentar 1× con `temperature: 0`.
+3. En fallo de parseo: quitar code-fences ` ```json `, extraer primer bloque `{…}`, `JSON.parse()`, validar keys, clamp `confidence` a `[0,1]`. Reintentar 1× con `temperature: 0`.
 
 ---
 
@@ -82,14 +83,14 @@ El texto del modelo siempre está en `response.choices[0].message.content` (stri
 
 Los `:free` de DeepSeek/Qwen/Llama/Mistral están **delistados**. Roster actual dominado por NVIDIA Nemotron, Google Gemma, Z.ai GLM.
 
-| Model ID (`:free`) | Context | Notas |
-|---|---|---|
-| **`z-ai/glm-5.2:free`** | 128K | **Mejor calidad general del free tier.** Pick primario. |
-| **`nvidia/nemotron-3-ultra-550b-a55b:free`** | 1M | MoE grande, buen reasoning. Fallback 1. |
-| `nvidia/nemotron-3-super-120b-a12b:free` | 262K | Reasoning mid-large. |
-| `google/gemma-4-31b-it:free` | 262K | Instruction-following fiable, techo de reasoning menor. |
-| `openai/gpt-oss-20b:free` | 131K | Open-weight; **bueno formateando JSON.** Fallback 2. |
-| `openrouter/free` | 200K | Meta-router que auto-elige un free vivo. Last-resort. |
+| Model ID (`:free`)                           | Context | Notas                                                   |
+| -------------------------------------------- | ------- | ------------------------------------------------------- |
+| **`z-ai/glm-5.2:free`**                      | 128K    | **Mejor calidad general del free tier.** Pick primario. |
+| **`nvidia/nemotron-3-ultra-550b-a55b:free`** | 1M      | MoE grande, buen reasoning. Fallback 1.                 |
+| `nvidia/nemotron-3-super-120b-a12b:free`     | 262K    | Reasoning mid-large.                                    |
+| `google/gemma-4-31b-it:free`                 | 262K    | Instruction-following fiable, techo de reasoning menor. |
+| `openai/gpt-oss-20b:free`                    | 131K    | Open-weight; **bueno formateando JSON.** Fallback 2.    |
+| `openrouter/free`                            | 200K    | Meta-router que auto-elige un free vivo. Last-resort.   |
 
 **Recomendación:** primario `z-ai/glm-5.2:free`; fallbacks `nvidia/nemotron-3-ultra-550b-a55b:free` y `openai/gpt-oss-20b:free`. Wire de fallback chain que salte IDs que devuelvan 404 / "no endpoints".
 
@@ -103,19 +104,21 @@ Los `:free` de DeepSeek/Qwen/Llama/Mistral están **delistados**. Roster actual 
 
 ```js
 async function pickFreeModel(apiKey) {
-  const res = await fetch("https://openrouter.ai/api/v1/models", {
-    headers: { Authorization: `Bearer ${apiKey}` }
-  });
-  const { data } = await res.json();
-  const free = data.filter(m => m.id.endsWith(":free"));
+  const res = await fetch('https://openrouter.ai/api/v1/models', {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  })
+  const { data } = await res.json()
+  const free = data.filter((m) => m.id.endsWith(':free'))
   const preferred = [
-    "z-ai/glm-5.2:free",
-    "nvidia/nemotron-3-ultra-550b-a55b:free",
-    "openai/gpt-oss-20b:free",
-  ];
-  return preferred.find(id => free.some(m => m.id === id))
-      ?? free.find(m => m.supported_parameters?.includes("structured_outputs"))?.id
-      ?? "openrouter/free";
+    'z-ai/glm-5.2:free',
+    'nvidia/nemotron-3-ultra-550b-a55b:free',
+    'openai/gpt-oss-20b:free',
+  ]
+  return (
+    preferred.find((id) => free.some((m) => m.id === id)) ??
+    free.find((m) => m.supported_parameters?.includes('structured_outputs'))?.id ??
+    'openrouter/free'
+  )
 }
 ```
 
@@ -125,13 +128,13 @@ async function pickFreeModel(apiKey) {
 
 Cualquier request lleva la API key en el header `Authorization`, visible en DevTools y en el bundle. Una key en `VITE_*` queda **efectivamente pública**.
 
-| Enfoque | Exposición | Esfuerzo | Uso |
-|---|---|---|---|
-| A. Env var build-time (`VITE_OPENROUTER_KEY`) | **Expuesta** en bundle | Cero | ❌ Nunca para demo desplegado |
-| B. Key provista por el usuario (campo Settings) | Solo al usuario dueño de la key | Bajo | ✅ Demos de challenge |
-| C. Proxy servidor (key server-side) | **Oculta** | Medio | ✅ Producción |
+| Enfoque                                         | Exposición                      | Esfuerzo | Uso                           |
+| ----------------------------------------------- | ------------------------------- | -------- | ----------------------------- |
+| A. Env var build-time (`VITE_OPENROUTER_KEY`)   | **Expuesta** en bundle          | Cero     | ❌ Nunca para demo desplegado |
+| B. Key provista por el usuario (campo Settings) | Solo al usuario dueño de la key | Bajo     | ✅ Demos de challenge         |
+| C. Proxy servidor (key server-side)             | **Oculta**                      | Medio    | ✅ Producción                 |
 
-**Decisión para el challenge:** **Enfoque B.** Campo de Settings donde el revisor pega *su propia* key OpenRouter, guardada en `localStorage`, enviada directo al browser. La feature IA queda **opt-in** (coincide con "optional AI-assisted prediction").
+**Decisión para el challenge:** **Enfoque B.** Campo de Settings donde el revisor pega _su propia_ key OpenRouter, guardada en `localStorage`, enviada directo al browser. La feature IA queda **opt-in** (coincide con "optional AI-assisted prediction").
 
 Mitigaciones a mostrar: keys con spend cap, key fuera de URL/logs, disclaimer en UI ("Tu key se guarda localmente y se envía directo a OpenRouter"). Mencionar el proxy (Enfoque C) como el camino de producción.
 

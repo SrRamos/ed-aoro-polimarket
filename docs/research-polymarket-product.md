@@ -18,7 +18,7 @@
   que enrutan órdenes reales, y expone **APIs públicas** (Gamma/CLOB) para SPAs custom.
 - El **embed oficial NO permite apostar dentro del iframe**: muestra datos en vivo y
   los botones "Buy"/"View Market" **redirigen a polymarket.com** (con código de afiliado
-  `?via=`). Es un componente de *display*, no de *trading*. `[HECHO/INFERENCIA]`
+  `?via=`). Es un componente de _display_, no de _trading_. `[HECHO/INFERENCIA]`
 - Si el cliente tiene **cuenta builder**, "widget" casi seguro significa **SPA/frontend
   custom que enruta órdenes al CLOB con su `builderCode`** para atribuir volumen y cobrar
   builder fees — NO el embed oficial (que no atribuye volumen ni permite trading propio).
@@ -28,6 +28,7 @@
 ## 1. El sitio polymarket.com — estructura y UI
 
 ### Home / listado de mercados `[HECHO]`
+
 Fuente: `https://polymarket.com/`, `https://polymarket.com/predictions/cards`
 
 - Polymarket se autodescribe como **"the world's largest prediction market"**.
@@ -41,7 +42,9 @@ Fuente: `https://polymarket.com/`, `https://polymarket.com/predictions/cards`
   asuntos internacionales.
 
 ### Anatomía de una card de mercado `[HECHO]`
+
 Cada card muestra:
+
 - **Título = la pregunta** del mercado (ej. "USA to Win Most Gold Medals").
 - **Imagen/thumbnail** del evento (logos de equipos, fotos, iconos de categoría).
 - **Outcomes con % de probabilidad en tiempo real** (probabilidad como display primario,
@@ -54,6 +57,7 @@ Cada card muestra:
   relacionadas** (Reuters, Bloomberg, WSJ). `[HECHO]`
 
 ### Cómo se muestran probabilidades y precios `[HECHO]`
+
 - Modelo binario: cada mercado tiene tokens **YES** y **NO**. Cada share paga **$1 si
   acierta, $0 si falla**. **YES + NO = $1 siempre** (si YES=$0.65, NO=$0.35).
 - `precio en ¢ = probabilidad implícita en %` (YES a 30¢ ⇒ 30% de probabilidad).
@@ -61,6 +65,7 @@ Cada card muestra:
   (NO candlesticks). Prioriza claridad sobre densidad de datos.
 
 ### Detalle del mercado y UI de apuesta `[HECHO]`
+
 Fuentes: `docs.polymarket.com/concepts/prices-orderbook`,
 `help.polymarket.com/.../limit-orders`, `docs.polymarket.com/.../no-limits`
 
@@ -69,8 +74,8 @@ Fuentes: `docs.polymarket.com/concepts/prices-orderbook`,
   la casa).
 - **Order book** con dos lados (bids/asks); el **spread** es la brecha entre mejor bid y
   mejor ask.
-- **Tipos de orden:** *Market order* (limit priced para ejecutar inmediatamente contra
-  órdenes en reposo) y *Limit order* (precio exacto; puede quedar en el libro y hacer
+- **Tipos de orden:** _Market order_ (limit priced para ejecutar inmediatamente contra
+  órdenes en reposo) y _Limit order_ (precio exacto; puede quedar en el libro y hacer
   **partial fill**).
 - **Sin límites de tamaño** de orden por diseño (aunque grandes órdenes mueven el precio).
 - La UI de trading está optimizada para **thumb-zone móvil**: botones Yes/No, input de
@@ -82,6 +87,7 @@ Fuentes: `docs.polymarket.com/concepts/prices-orderbook`,
   `[HECHO]` (según análisis de terceros)
 
 ### Jerarquía visual (resumen) `[INFERENCIA]` a partir de lo anterior
+
 1. Imagen + pregunta (gancho tipo noticia).
 2. Outcomes con % grande y prominente (comprensible para no-traders).
 3. Botones de acción Yes/No color-coded.
@@ -93,6 +99,7 @@ Fuentes: `docs.polymarket.com/concepts/prices-orderbook`,
 ## 2. ¿Existe un embed/widget oficial? — SÍ (solo-lectura)
 
 ### Fuentes oficiales
+
 - **Builder de embeds:** `https://embed.polymarket.com/` `[HECHO]`
 - **Doc oficial:** `https://help.polymarket.com/en/articles/13364174-how-to-use-embeds`
   (redirige desde `docs.polymarket.com/polymarket-learn/FAQ/embeds`) `[HECHO]`
@@ -100,6 +107,7 @@ Fuentes: `docs.polymarket.com/concepts/prices-orderbook`,
   `https://embed.polymarket.com/market.html?market=<slug>&features=volume&theme=dark` `[HECHO]`
 
 ### Mecanismo exacto `[HECHO]`
+
 Es un **`<iframe>`** que apunta a `embed.polymarket.com`. Snippet literal generado por
 el builder oficial (`embed.polymarket.com`):
 
@@ -111,7 +119,8 @@ el builder oficial (`embed.polymarket.com`):
     width="400"
     height="400"
     frameborder="0"
-    allowtransparency="true">
+    allowtransparency="true"
+  >
   </iframe>
 </figure>
 ```
@@ -121,6 +130,7 @@ el builder oficial (`embed.polymarket.com`):
   es decir el **mercado se identifica por su `slug`** y las opciones van como query params.
 
 ### Flujo de uso (doc oficial) `[HECHO]`
+
 **Web:** navegar al mercado → clic en el link de embed (`< >`) → elegir **light/dark** →
 copiar el código autogenerado → pegar en el CMS/editor → publicar.
 **X/Twitter:** pegar la URL del mercado directamente (auto-embed).
@@ -128,7 +138,9 @@ copiar el código autogenerado → pegar en el CMS/editor → publicar.
 que **auto-refresca las odds**.
 
 ### Opciones de configuración `[HECHO]`
+
 Del builder `embed.polymarket.com`, los toggles disponibles:
+
 - **Dimensiones:** fit-to-container o width/height custom en px.
 - **Tema:** dark mode on/off.
 - **Layout:** Standard o **Banner**.
@@ -138,7 +150,9 @@ Del builder `embed.polymarket.com`, los toggles disponibles:
   salientes.
 
 ### Qué muestra el widget renderizado `[HECHO]`
+
 Del ejemplo en vivo (mercado "Favorite to win... day after debate"):
+
 - Header con branding Polymarket + link **"View Market"**.
 - Imagen banner del evento.
 - Escala horizontal de porcentaje (0%–50%–100%).
@@ -147,6 +161,7 @@ Del ejemplo en vivo (mercado "Favorite to win... day after debate"):
 - Múltiples links "View Market" que llevan al mercado completo.
 
 ### ¿Se puede APOSTAR dentro del iframe? — NO `[HECHO/INFERENCIA]`
+
 - El embed es un **componente de display de solo-lectura**. Aunque existe un toggle
   "Buy buttons", **los links salientes llevan a polymarket.com** (con el afiliado `?via=`).
   `[HECHO]` que los links salen a polymarket.com; `[INFERENCIA]` de que el toggle "Buy"
@@ -154,6 +169,7 @@ Del ejemplo en vivo (mercado "Favorite to win... day after debate"):
   firma de orden que el iframe cross-origin no maneja).
 
 ### Limitaciones oficiales `[HECHO]`
+
 - **Solo mercados individuales.** El feature "currently supports single markets only" — NO
   se pueden incrustar grupos de mercados, eventos multi-outcome como colección, ni
   categorías. Solo un mercado a la vez.
@@ -161,6 +177,7 @@ Del ejemplo en vivo (mercado "Favorite to win... day after debate"):
   routing de órdenes). `[INFERENCIA]`
 
 ### Terceros (contexto) `[HECHO]`
+
 Existen widgets no-oficiales (PredScope, PredictWidget, PolyMart) que también exponen
 odds de Polymarket vía iframe para WordPress/Webflow/Squarespace. Irrelevantes si se usa
 el oficial, pero confirman el patrón iframe.
@@ -170,6 +187,7 @@ el oficial, pero confirman el patrón iframe.
 ## 3. Programa "Builder" de Polymarket
 
 ### Fuentes oficiales
+
 - `https://builders.polymarket.com/` `[HECHO]`
 - `https://docs.polymarket.com/builders/overview` `[HECHO]`
 - `https://docs.polymarket.com/builders/fees` `[HECHO]`
@@ -177,11 +195,13 @@ el oficial, pero confirman el patrón iframe.
 - Ejemplo oficial: `https://github.com/Polymarket/turnkey-safe-builder-example` `[HECHO]`
 
 ### Qué es `[HECHO]`
+
 Un **builder** = "persona, grupo u organización **cuya aplicación enruta órdenes de
 usuarios hacia Polymarket**". El programa es **gratis y permissionless**: se puede empezar
 a construir directamente.
 
 ### Qué habilita una cuenta builder `[HECHO]`
+
 - **Builder code:** identificador único `bytes32` asignado a tu perfil. Se **adjunta a las
   órdenes firmadas** para atribuir el volumen a tu app.
 - **Atribución on-chain:** el `builder` es **parte del struct de la orden V2 firmada** (no
@@ -195,18 +215,19 @@ a construir directamente.
   `[HECHO que se menciona]` / `[INFERENCIA del alcance exacto]`
 
 ### Builder fees `[HECHO]`
+
 - Son **flat % del notional**, configurables por cada builder dentro de límites:
   - **Taker: 0–100 bps (0–1%)** máx.
   - **Maker: 0–50 bps (0–0.5%)** máx.
   - Granularidad de **1 bps (0.01%)**.
 - **Aditivas:** los builder fees **nunca reemplazan** los platform fees; se suman encima.
 
-  | Escenario | Fee aplicado |
-  |---|---|
-  | Sin platform fee + sin builder code | $0 |
-  | Sin platform fee + con builder code | Solo builder fee |
+  | Escenario                           | Fee aplicado      |
+  | ----------------------------------- | ----------------- |
+  | Sin platform fee + sin builder code | $0                |
+  | Sin platform fee + con builder code | Solo builder fee  |
   | Con platform fee + sin builder code | Solo platform fee |
-  | Con platform fee + con builder code | Ambos |
+  | Con platform fee + con builder code | Ambos             |
 
 - Fórmula: `notional × builder_fee_rate_bps / 10000`. (Ej.: 1,000 pUSD @ 100 bps taker ⇒
   10 pUSD de builder fee.)
@@ -217,6 +238,7 @@ a construir directamente.
   valida que el usuario tenga pUSD suficiente para cubrir trade + fees máximos posibles.
 
 ### Tiers del Relayer (transacciones/día) `[HECHO]` (fuente tercero, botforkalshi)
+
 - **Unverified:** 100/día (default).
 - **Verified:** 10,000/día (aprobación manual).
 - **Partner:** ilimitado (estratégico).
@@ -224,16 +246,19 @@ a construir directamente.
   ingeniería/marketing (sujeto a aprobación).
 
 ### Rewards `[HECHO]`
+
 Polymarket lanzó un **programa de rewards semanal en USDC** basado en el volumen de
 trading integrado, para incentivar la adopción de Builder Codes.
 
 ### Relación con crear un widget/frontend `[HECHO/INFERENCIA]`
+
 Sí, directísima: **el propósito del programa Builder es exactamente construir un frontend
 (app/widget) que enruta órdenes de sus usuarios al CLOB de Polymarket, adjuntando el
 builderCode para atribuir volumen y cobrar builder fees.** El ejemplo oficial
 `turnkey-safe-builder-example` muestra el flujo con wallets Turnkey + Safe. `[HECHO]`
 
 ### Obligaciones del builder `[HECHO]`
+
 Debe **divulgar los fees actuales antes de la firma** de la orden, e implementar
 idempotencia, reconciliación y manejo de partial-fills.
 
@@ -243,14 +268,15 @@ idempotencia, reconciliación y manejo de partial-fills.
 
 Fuente: `chainstack.com/polymarket-api-for-developers/` `[HECHO]`
 
-| API | Base URL | Uso |
-|---|---|---|
-| **Gamma** | `https://gamma-api.polymarket.com` | Descubrimiento de mercados y metadata. **Sin API key / sin auth / sin wallet.** |
-| **CLOB** | `https://clob.polymarket.com` | Motor de trading, order book, ejecución. |
-| **Data** | `https://data-api.polymarket.com` | Analytics/posiciones de usuario (requiere contexto de wallet). |
-| **WebSocket** | `wss://ws-subscriptions-clob.polymarket.com/ws/market` | Streaming en tiempo real (ticks, last-trade). |
+| API           | Base URL                                               | Uso                                                                             |
+| ------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| **Gamma**     | `https://gamma-api.polymarket.com`                     | Descubrimiento de mercados y metadata. **Sin API key / sin auth / sin wallet.** |
+| **CLOB**      | `https://clob.polymarket.com`                          | Motor de trading, order book, ejecución.                                        |
+| **Data**      | `https://data-api.polymarket.com`                      | Analytics/posiciones de usuario (requiere contexto de wallet).                  |
+| **WebSocket** | `wss://ws-subscriptions-clob.polymarket.com/ws/market` | Streaming en tiempo real (ticks, last-trade).                                   |
 
 **Para un widget de solo-lectura → usar Gamma:**
+
 - `/events` — listados con filtros (active/closed/archived, orden por volumen).
 - `/markets` — arrays **`outcomes` y `outcomePrices`** (mapean 1:1), token IDs YES/NO,
   probabilidad implícita como precio decimal, volumen 24h, liquidez, flag
@@ -259,7 +285,8 @@ Fuente: `chainstack.com/polymarket-api-for-developers/` `[HECHO]`
 
 **Para un widget que apuesta (builder) →** además de Gamma para display, se necesita el
 **CLOB client** (ej. `Polymarket/py-clob-client`) + firma de órdenes V2 con `builderCode`
-+ Relayer. `[HECHO]` (existencia de clientes) / `[INFERENCIA]` del stack exacto para JS/SPA.
+
+- Relayer. `[HECHO]` (existencia de clientes) / `[INFERENCIA]` del stack exacto para JS/SPA.
 
 ---
 
@@ -294,6 +321,7 @@ Para que el widget "se sienta Polymarket": `[HECHO]` salvo lo marcado.
 ## Fuentes citadas
 
 **Oficiales**
+
 - Home: https://polymarket.com/ · https://polymarket.com/predictions/cards
 - Embeds (builder): https://embed.polymarket.com/
 - Embeds (ejemplo): https://embed.polymarket.com/market.html?market=favorite-to-win-on-polymarket-one-day-after-debate&features=volume&theme=dark
@@ -308,6 +336,7 @@ Para que el widget "se sienta Polymarket": `[HECHO]` salvo lo marcado.
 - Cliente CLOB: https://github.com/Polymarket/py-clob-client
 
 **Terceros (contexto)**
+
 - Chainstack (APIs): https://chainstack.com/polymarket-api-for-developers/
 - Avark (UX patterns): https://avark.agency/learn/prediction-market-design-patterns
 - BotForKalshi (Builder guide): https://www.botforkalshi.com/blog/polymarket-builder-program-guide

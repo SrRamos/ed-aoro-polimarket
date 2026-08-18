@@ -86,8 +86,7 @@ export class MockBettingService implements BettingService {
       throw new BetValidationError(invalid)
     }
 
-    const ms =
-      this.options.delayMs ?? 300 + Math.round(Math.random() * 500) // 300–800ms
+    const ms = this.options.delayMs ?? 300 + Math.round(Math.random() * 500) // 300–800ms
     await delay(ms)
 
     const cost = order.size * order.price // notional (AC5.2)

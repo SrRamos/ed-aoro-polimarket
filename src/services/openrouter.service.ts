@@ -175,9 +175,7 @@ interface ChatCompletionResponse {
   choices?: Array<{ message?: { content?: string } }>
 }
 
-type ResponseFormat =
-  | { type: 'json_object' }
-  | { type: 'json_schema'; json_schema: unknown }
+type ResponseFormat = { type: 'json_object' } | { type: 'json_schema'; json_schema: unknown }
 
 async function chatComplete(
   apiKey: string,
@@ -232,14 +230,7 @@ async function runLadder<T>(
 
   // Attempt 2 — one retry at temperature 0 with an explicit JSON-only instruction.
   const retrySystem = `${system}\n\nReply with ONLY a single JSON object. No prose, no code fences.`
-  const second = await chatComplete(
-    apiKey,
-    model.id,
-    retrySystem,
-    user,
-    { type: 'json_object' },
-    0,
-  )
+  const second = await chatComplete(apiKey, model.id, retrySystem, user, { type: 'json_object' }, 0)
   const secondResult = validate(extractJson(second))
   if (secondResult) return secondResult
 
@@ -271,9 +262,7 @@ HARD RULES:
 Reply with ONLY a JSON object: { "recommendedMarketId": string, "confidence": number, "rationale": string }.`
 
 function outcomeUserPrompt(market: Market): string {
-  const lines = market.outcomes
-    .map((label, i) => `- ${label}: ${market.prices[i] ?? 0}`)
-    .join('\n')
+  const lines = market.outcomes.map((label, i) => `- ${label}: ${market.prices[i] ?? 0}`).join('\n')
   return `MARKET
 Question: ${market.question}
 Outcomes and current prices (price = implied probability):
@@ -287,9 +276,7 @@ Recommend exactly one outcome (verbatim label) and justify it from the numbers. 
 function marketUserPrompt(markets: Market[]): string {
   const blocks = markets
     .map((m) => {
-      const prices = m.outcomes
-        .map((label, i) => `${label}=${m.prices[i] ?? 0}`)
-        .join(', ')
+      const prices = m.outcomes.map((label, i) => `${label}=${m.prices[i] ?? 0}`).join(', ')
       return `- id: ${m.id}
   question: ${m.question}
   prices: ${prices}

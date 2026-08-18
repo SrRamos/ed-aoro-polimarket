@@ -38,8 +38,6 @@ export function formatDate(iso: string | null): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
   const day = String(d.getUTCDate()).padStart(2, '0')
-  const month = d
-    .toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })
-    .toLowerCase()
+  const month = d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }).toLowerCase()
   return `${day}/${month}/${d.getUTCFullYear()}`
 }

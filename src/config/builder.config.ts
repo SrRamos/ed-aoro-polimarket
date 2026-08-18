@@ -30,9 +30,7 @@ export function getBuilderConfig(overrides?: Partial<BuilderConfig>): BuilderCon
   const env = import.meta.env
 
   const base: BuilderConfig = {
-    builderCode:
-      (env.VITE_BUILDER_CODE as string | undefined)?.trim() ||
-      PLACEHOLDER_BUILDER_CODE,
+    builderCode: (env.VITE_BUILDER_CODE as string | undefined)?.trim() || PLACEHOLDER_BUILDER_CODE,
     builderTakerBps: envNumber(env.VITE_BUILDER_TAKER_BPS, 100),
     builderMakerBps: envNumber(env.VITE_BUILDER_MAKER_BPS, 50),
     platformBps: envNumber(env.VITE_PLATFORM_BPS, 0),

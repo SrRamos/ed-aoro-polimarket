@@ -22,7 +22,8 @@ interface PersistedSettings {
 function loadSettings(): SettingsState {
   const raw = readJson<PersistedSettings>(SETTINGS_KEY, {})
   return {
-    openRouterKey: typeof raw.openRouterKey === 'string' && raw.openRouterKey ? raw.openRouterKey : null,
+    openRouterKey:
+      typeof raw.openRouterKey === 'string' && raw.openRouterKey ? raw.openRouterKey : null,
     builderCodeOverride:
       typeof raw.builderCodeOverride === 'string' && raw.builderCodeOverride
         ? raw.builderCodeOverride
