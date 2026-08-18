@@ -18,20 +18,20 @@ Everything lives on **one page** (`App.vue`) with a vertical, mobile-first layou
 
 ### 1.3 Confirmed decisions (the spec is built on these)
 
-| Ref | Decision |
-|---|---|
-| D1 | **Market reads are REAL** via Polymarket Gamma API (`https://gamma-api.polymarket.com`) — public, no auth, CORS `*`. |
-| D2 | **Betting is MOCK by default** behind a `BettingService` interface. The reason to mock is **operational, not technical** (corrected): charging a builder fee / attributing volume needs only the `bytes32` `builder` field on the user-signed order — **no backend, no builder secret**. The demo mocks because of **geoblock by IP on `POST /order` (33 countries, incl. US/UK), a ToS ban on VPN circumvention, and the need for a funded USDC wallet + approvals**. The brief confirms a VPN may be required even for reads. The deliverable is a GitHub repo, not a funded real-bet demo. |
-| D3 | **Prices are Gamma snapshots** (`outcomePrices`) for the MVP. Live CLOB `/price` quoting is a deferred enhancement, not built now. |
-| D4 | **AI is opt-in** via OpenRouter free models; the API key is **user-supplied** in Settings and stored in `localStorage`. No key is ever bundled. |
-| D5 | AI model is **discovered at runtime** with a preference/fallback chain (`z-ai/glm-5.2:free` → `nvidia/nemotron-3-ultra-550b-a55b:free` → `openai/gpt-oss-20b:free` → `openrouter/free`). |
-| D6 | **Light theme only.** The DS ships no dark mode; no dark tokens are invented. |
-| D7–D8 | **Custom components only**, `SJ`/`W` naming, **token-only**, and they MUST follow **all** DS guidelines (not just tokens). |
-| D9 | **Mobile-first under the DS's own conditions**: base = 0, five `min-width` breakpoints, thumb-zone ergonomics, touch ≥24×24 (aim 44×44), inputs ≥16px. |
-| D10 | **"Widget" = custom Polymarket-style SPA** (this build); the **official read-only embed is rejected** (display-only iframe: no in-frame betting, single-market only, no builder-volume attribution), and it is **not a blind reconstruction**. Reads are real via Gamma. |
-| D11 | **Mock bet is genuinely "builder-aware"**: the `BettingService` carries the configurable **builderCode (`bytes32`)** and shows the **real fee breakdown** — notional, platform fee, and **additive** builder fee (taker ≤100 bps / maker ≤50 bps), via `fee = notional × bps / 10000` — surfaced **before confirmation** (builder obligation: disclose total cost before signing). |
-| D12 | **A real CLOB order path is implemented behind the same `BettingService` interface as an opt-in, gated stretch capability.** It uses `@polymarket/client` (V2 TS SDK) with a browser **viem** signer, signs L1 (`ClobAuth`) + V2 Order struct with the `builder` field, derives the user's L2 creds, and `POST /order`s to the CLOB **with no backend** for attribution. It exists in code (swappable) but is **gated behind a flag/config** and **never runs in the demo** (geoblock, funded wallet + approvals, possible Verified tier). |
-| Stack | Vue 3 (`<script setup>`, Composition API) + Vite + **TypeScript** + Pinia + `@ramoslabs/tokens`. Testing: **Vitest unit + 1 Playwright E2E** (search → bet). |
+| Ref   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1    | **Market reads are REAL** via Polymarket Gamma API (`https://gamma-api.polymarket.com`) — public, no auth, CORS `*`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| D2    | **Betting is MOCK by default** behind a `BettingService` interface. The reason to mock is **operational, not technical** (corrected): charging a builder fee / attributing volume needs only the `bytes32` `builder` field on the user-signed order — **no backend, no builder secret**. The demo mocks because of **geoblock by IP on `POST /order` (33 countries, incl. US/UK), a ToS ban on VPN circumvention, and the need for a funded USDC wallet + approvals**. The brief confirms a VPN may be required even for reads. The deliverable is a GitHub repo, not a funded real-bet demo. |
+| D3    | **Prices are Gamma snapshots** (`outcomePrices`) for the MVP. Live CLOB `/price` quoting is a deferred enhancement, not built now.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| D4    | **AI is opt-in** via OpenRouter free models; the API key is **user-supplied** in Settings and stored in `localStorage`. No key is ever bundled.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| D5    | AI model is **discovered at runtime** with a preference/fallback chain (`z-ai/glm-5.2:free` → `nvidia/nemotron-3-ultra-550b-a55b:free` → `openai/gpt-oss-20b:free` → `openrouter/free`).                                                                                                                                                                                                                                                                                                                                                                                                      |
+| D6    | **Light theme only.** The DS ships no dark mode; no dark tokens are invented.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| D7–D8 | **Custom components only**, `SJ`/`W` naming, **token-only**, and they MUST follow **all** DS guidelines (not just tokens).                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| D9    | **Mobile-first under the DS's own conditions**: base = 0, five `min-width` breakpoints, thumb-zone ergonomics, touch ≥24×24 (aim 44×44), inputs ≥16px.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| D10   | **"Widget" = custom Polymarket-style SPA** (this build); the **official read-only embed is rejected** (display-only iframe: no in-frame betting, single-market only, no builder-volume attribution), and it is **not a blind reconstruction**. Reads are real via Gamma.                                                                                                                                                                                                                                                                                                                      |
+| D11   | **Mock bet is genuinely "builder-aware"**: the `BettingService` carries the configurable **builderCode (`bytes32`)** and shows the **real fee breakdown** — notional, platform fee, and **additive** builder fee (taker ≤100 bps / maker ≤50 bps), via `fee = notional × bps / 10000` — surfaced **before confirmation** (builder obligation: disclose total cost before signing).                                                                                                                                                                                                            |
+| D12   | **A real CLOB order path is implemented behind the same `BettingService` interface as an opt-in, gated stretch capability.** It uses `@polymarket/client` (V2 TS SDK) with a browser **viem** signer, signs L1 (`ClobAuth`) + V2 Order struct with the `builder` field, derives the user's L2 creds, and `POST /order`s to the CLOB **with no backend** for attribution. It exists in code (swappable) but is **gated behind a flag/config** and **never runs in the demo** (geoblock, funded wallet + approvals, possible Verified tier).                                                    |
+| Stack | Vue 3 (`<script setup>`, Composition API) + Vite + **TypeScript** + Pinia + `@ramoslabs/tokens`. Testing: **Vitest unit + 1 Playwright E2E** (search → bet).                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ### 1.4 Glossary
 
@@ -47,31 +47,40 @@ Everything lives on **one page** (`App.vue`) with a vertical, mobile-first layou
 ## 2. User stories (grouped by capability)
 
 ### Capability F0 — Market data integrity (foundation)
+
 - **US1** — As a developer/consumer of the widget, I want the JSON-encoded string arrays from Gamma (`outcomes`, `outcomePrices`, `clobTokenIds`) parsed and positionally aligned into a normalized `Market`, so the rest of the UI works with typed arrays instead of raw strings.
 
 ### Capability A — Search markets
+
 - **US2** — As a user, I want to search markets by free text, so I can find the market I care about.
 
 ### Capability B — Browse / list markets
+
 - **US3** — As a user, I want to see a default list of active markets (top by volume) on load, so I have something to explore before searching.
 
 ### Capability C — View market detail
+
 - **US4** — As a user, I want to open a market and see its outcomes, prices (as %), and volume/liquidity, so I can understand the market before betting.
 
 ### Capability D — Place a bet (simulated, builder-aware)
+
 - **US5** — As a user, I want to place a simulated bet on a chosen outcome with a chosen amount and see the cost, the real builder/platform **fee breakdown**, and the potential payout, so I can experience a builder-aware betting flow without real funds. The receipt records the builderCode that a real order would carry.
 
 ### Capability E — View positions
+
 - **US6** — As a user, I want to see my placed (simulated) positions persisted across reloads, so I can track what I have "bet" on.
 
 ### Capability F — AI-assisted suggestions (bonus)
+
 - **US7** — As a user with an OpenRouter key, I want an on-demand AI suggestion for a market (recommended outcome + confidence + rationale), so I can get a data-grounded second opinion on **which outcome** to pick.
-- **US9** — As a user with an OpenRouter key, I want an on-demand AI suggestion over the current market list/search results recommending **which market** is most attractive (recommended market + confidence + rationale), so the AI assists in *choosing a market* as well as an outcome (per the brief: "assist in choosing a market and outcome").
+- **US9** — As a user with an OpenRouter key, I want an on-demand AI suggestion over the current market list/search results recommending **which market** is most attractive (recommended market + confidence + rationale), so the AI assists in _choosing a market_ as well as an outcome (per the brief: "assist in choosing a market and outcome").
 
 ### Capability G — Settings (AI key)
+
 - **US8** — As a user, I want to enter and manage my OpenRouter API key in Settings, so the optional AI feature can be enabled or disabled by me.
 
 ### Capability H — Real order path (opt-in, gated stretch)
+
 - **US10** — As an advanced/opt-in user, I want a real CLOB order path implemented behind the same `BettingService` interface (builder-code attribution, browser wallet signing, no backend) that is **disabled by default and gated by config**, so the widget demonstrates a real path without ever submitting a real order in the demo.
 
 ---
@@ -130,6 +139,8 @@ IF the search request fails (network error, non-2xx, or timeout), THEN THE SYSTE
 **AC2.6** (State-driven, cleared input)
 WHILE the search input is empty, THE SYSTEM SHALL show the default browse list (US3) rather than an empty-results message.
 
+> **Note — graceful degradation to fixtures is the sanctioned failure mode for reads (implementation reconciliation).** In the shipped build, when a read (search or browse) fails — network, CORS, geoblock, or 5xx — `markets.store` **degrades gracefully to the bundled sample fixtures** and flags `usingFallback` so the UI shows a discreet "sample data" notice, rather than surfacing a dead-end error. This is an **accepted, deliberate behavior**: because Gamma reads can be geoblocked by IP (the brief notes a VPN may be needed even for reads), the demo must stay usable offline/blocked. The explicit **error + retry** path of **AC2.5 / AC3.4** therefore remains a **secondary path** — it is still implemented (`retry()` re-runs the active view), and is exercisable via a demo override that disables the fixture fallback. Both are conformant: the error-state ACs describe the contract when fallback is off; fixture degradation is the default resilience posture when it is on.
+
 ---
 
 ### US3 — Browse / list markets
@@ -148,7 +159,7 @@ WHILE the default list is loading, THE SYSTEM SHALL display skeleton/loading pla
 
 <a id="ac3-4"></a>
 **AC3.4** (Unwanted-behavior, error)
-IF the default list request fails, THEN THE SYSTEM SHALL display an error state with a retry affordance.
+IF the default list request fails, THEN THE SYSTEM SHALL display an error state with a retry affordance. (See the US2 note: by default the shipped build degrades to sample fixtures as the sanctioned failure mode; this error + retry path is the secondary path, exercisable via a demo override.)
 
 <a id="ac3-5"></a>
 **AC3.5** (Unwanted-behavior, empty)
@@ -286,7 +297,7 @@ IF `recommendedOutcome` does not match any provided outcome label after the sing
 
 ### US9 — AI-assisted market pick (bonus)
 
-> This capability assists the user in *choosing a market* (over the current list/search results), complementing US7's outcome pick — together they satisfy the brief's "assist in choosing a market and outcome". It reuses the model-discovery and structured-output ladder defined for US7 (AC7.4–AC7.5).
+> This capability assists the user in _choosing a market_ (over the current list/search results), complementing US7's outcome pick — together they satisfy the brief's "assist in choosing a market and outcome". It reuses the model-discovery and structured-output ladder defined for US7 (AC7.4–AC7.5).
 
 <a id="ac9-1"></a>
 **AC9.1** (Optional, gated on key)
@@ -505,7 +516,7 @@ THE SYSTEM SHALL keep betting behind the `BettingService` interface, with **`Moc
 
 <a id="nfr-test-1"></a>
 **NFR-TEST-1** (Ubiquitous, unit coverage)
-THE SYSTEM SHALL cover with Vitest unit tests at minimum: market normalization (AC1.*), bet cost/payout math (AC5.2–AC5.3), the additive builder/platform fee breakdown math (AC5.8, `fee = notional × bps / 10000`), position persistence (AC6.*), and the AI parse/validate ladder for both outcome and market picks (AC7.5–AC7.6, AC7.10, AC9.3, AC9.6).
+THE SYSTEM SHALL cover with Vitest unit tests at minimum: market normalization (AC1._), bet cost/payout math (AC5.2–AC5.3), the additive builder/platform fee breakdown math (AC5.8, `fee = notional × bps / 10000`), position persistence (AC6._), and the AI parse/validate ladder for both outcome and market picks (AC7.5–AC7.6, AC7.10, AC9.3, AC9.6).
 
 <a id="nfr-test-2"></a>
 **NFR-TEST-2** (Ubiquitous, E2E)
@@ -532,13 +543,13 @@ The following are explicitly **not** run/built in this feature's default demo:
 
 ### 7.1 Service contracts (from the analysis doc §5)
 
-| Requirement(s) | Service / contract |
-|---|---|
-| AC2.*, AC3.*, AC4.* | `polymarket.service.ts` — `searchMarkets(q)` (Gamma `/public-search`), `getMarkets(filters)` (`/markets`), `getMarket(idOrSlug)`; `normalizeMarket(raw)` performs AC1.* parsing. |
-| AC1.* | `models/market.ts` — normalized `Market { id, question, slug, outcomes[], prices[], tokenIds[], volume, liquidity, endDate, image, active, closed }`. |
-| AC5.*, AC6.*, AC10.* | `betting.service.ts` — `interface BettingService { placeBet(o: BetOrder): Promise<BetReceipt> }`; `MockBettingService` (default, builder-aware) + `ClobBettingService` (opt-in, config-gated, `@polymarket/client` + viem signer) behind the same interface; shared `computeFees(notional, builderConfig)` (additive builder/platform, `notional×bps/10000`); `models/bet.ts` — `BetOrder`, `BetReceipt { …, fees, builderCode }`, `FeeBreakdown`, `Position`; builderCode from config (placeholder default); persisted via `stores/bets.store.ts` (localStorage). |
-| AC7.*, AC9.*, AC8.* | `openrouter.service.ts` — `pickFreeModel(apiKey)`, `predictOutcome(market, apiKey)` and `recommendMarket(markets, apiKey)` with the shared parse ladder + validation; `models/prediction.ts` — `AiPrediction { recommendedOutcome, confidence, rationale }`, `AiMarketPick { recommendedMarketId, confidence, rationale }`; key in `stores/settings.store.ts`. |
-| NFR-SVC-1, NFR-SVC-2 | `http.ts` — fetch wrapper (base URL, timeout, error normalization, retry); Vite dev proxy as CORS fallback. |
+| Requirement(s)       | Service / contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC2._, AC3._, AC4.*  | `polymarket.service.ts` — `searchMarkets(q)` (Gamma `/public-search`), `getMarkets(filters)` (`/markets`), `getMarket(idOrSlug)`; `normalizeMarket(raw)` performs AC1.* parsing.                                                                                                                                                                                                                                                                                                                                                                                   |
+| AC1.*                | `models/market.ts` — normalized `Market { id, question, slug, outcomes[], prices[], tokenIds[], volume, liquidity, endDate, image, active, closed }`.                                                                                                                                                                                                                                                                                                                                                                                                              |
+| AC5._, AC6._, AC10.* | `betting.service.ts` — `interface BettingService { placeBet(o: BetOrder): Promise<BetReceipt> }`; `MockBettingService` (default, builder-aware) + `ClobBettingService` (opt-in, config-gated, `@polymarket/client` + viem signer) behind the same interface; shared `computeFees(notional, builderConfig)` (additive builder/platform, `notional×bps/10000`); `models/bet.ts` — `BetOrder`, `BetReceipt { …, fees, builderCode }`, `FeeBreakdown`, `Position`; builderCode from config (placeholder default); persisted via `stores/bets.store.ts` (localStorage). |
+| AC7._, AC9._, AC8.*  | `openrouter.service.ts` — `pickFreeModel(apiKey)`, `predictOutcome(market, apiKey)` and `recommendMarket(markets, apiKey)` with the shared parse ladder + validation; `models/prediction.ts` — `AiPrediction { recommendedOutcome, confidence, rationale }`, `AiMarketPick { recommendedMarketId, confidence, rationale }`; key in `stores/settings.store.ts`.                                                                                                                                                                                                     |
+| NFR-SVC-1, NFR-SVC-2 | `http.ts` — fetch wrapper (base URL, timeout, error normalization, retry); Vite dev proxy as CORS fallback.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ### 7.2 Folder architecture (from the analysis doc §4)
 
