@@ -1,6 +1,11 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const baseURL = 'http://localhost:5173'
+// Dedicated port so the E2E server never collides with the always-on dev
+// server on 5173 (this branch runs in its own git worktree). Override with
+// PLAYWRIGHT_PORT if needed. `--strictPort` makes a clash fail loudly instead
+// of silently drifting to a port the baseURL wouldn't match.
+const PORT = Number(process.env.PLAYWRIGHT_PORT ?? 4290)
+const baseURL = `http://localhost:${PORT}`
 
 // https://playwright.dev/docs/test-configuration
 export default defineConfig({
@@ -20,7 +25,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev',
+    // Vite dev server on the dedicated port; the E2E deterministically stubs
+    // all Gamma network traffic via page.route, so no live Polymarket access
+    // (or dev proxy) is ever needed.
+    command: `npm run dev -- --port ${PORT} --strictPort`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

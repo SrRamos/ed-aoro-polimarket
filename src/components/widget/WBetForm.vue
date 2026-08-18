@@ -34,7 +34,14 @@ const emit = defineEmits<WBetFormEmits>()
 const amount = ref('')
 const attempted = ref(false)
 
-const size = computed(() => Number.parseFloat(amount.value))
+// Vue casts an <input type="number"> v-model to a *number*, so `amount.value`
+// may arrive here as a number rather than the string it is typed as. Normalize
+// to a string for the empty/whitespace checks below so `.trim()` never throws.
+const amountText = computed(() =>
+  amount.value == null ? '' : String(amount.value),
+)
+
+const size = computed(() => Number.parseFloat(amountText.value))
 const sizeValid = computed(
   () => Number.isFinite(size.value) && size.value > 0 && size.value <= props.maxAmount,
 )
@@ -51,8 +58,8 @@ const payout = computed(() => shares.value * 1)
 const fees = computed(() => computeFees(cost.value, props.builderConfig, 'taker'))
 
 const amountError = computed(() => {
-  if (!attempted.value && amount.value === '') return ''
-  if (amount.value.trim() === '') return 'Enter an amount to bet.'
+  if (!attempted.value && amountText.value === '') return ''
+  if (amountText.value.trim() === '') return 'Enter an amount to bet.'
   if (!Number.isFinite(size.value)) return 'Amount must be a number.'
   if (size.value <= 0) return 'Amount must be greater than $0.'
   if (size.value > props.maxAmount) return `Amount can’t exceed ${formatCurrency(props.maxAmount)}.`
