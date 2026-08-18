@@ -193,10 +193,10 @@ const selectedTokenId = computed(() =>
 }
 
 .oc-btn {
-  /* Per-tone accent/surface/border — Yes→success, No→error (see outcomeTone). */
-  --oc-accent: var(--color-primary);
-  --oc-surface: var(--color-surface);
-  --oc-border: var(--color-border-light);
+  /* Per-tone SOLID fill — Yes→success-strong, No→error-strong (see outcomeTone).
+     The -strong tones are the AA-safe fills for white text (≥3:1); the base
+     emerald/red are too light. No borders — the color IS the fill. */
+  --oc-fill: var(--color-primary);
   position: relative;
   isolation: isolate;
   display: flex;
@@ -206,76 +206,80 @@ const selectedTokenId = computed(() =>
   padding: var(--space-3) var(--space-4);
   font: inherit;
   text-align: left;
-  background: var(--oc-surface);
-  border: 2px solid var(--oc-border);
-  border-radius: var(--radius-sm);
+  color: var(--color-white);
+  background: var(--oc-fill);
+  border: 0;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
 }
 
 .oc-btn--success {
-  --oc-accent: var(--color-success-strong);
-  --oc-surface: var(--color-success-surface);
-  --oc-border: var(--color-success-border);
+  --oc-fill: var(--color-success-strong);
 }
 
 .oc-btn--error {
-  --oc-accent: var(--color-error-strong);
-  --oc-surface: var(--color-error-surface);
-  --oc-border: var(--color-error-border);
+  --oc-fill: var(--color-error-strong);
 }
 
+/* Dot, label, %, and ✓ all ride the solid fill in white. */
 .oc-btn__dot {
   flex: 0 0 auto;
   width: var(--space-3);
   height: var(--space-3);
   border-radius: var(--radius-pill);
-}
-
-.oc-btn--success .oc-btn__dot {
-  background: var(--color-success);
-}
-.oc-btn--error .oc-btn__dot {
-  background: var(--color-error);
-}
-.oc-btn--primary .oc-btn__dot {
-  background: var(--color-primary);
+  background: var(--color-white);
 }
 
 .oc-btn__name {
   flex: 1 1 auto;
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text-strong);
+  color: var(--color-white);
 }
 
 .oc-btn__pct {
   font-weight: var(--font-weight-bold);
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-heading);
+  color: var(--color-white);
 }
 
 .oc-btn__check {
-  color: var(--oc-accent);
+  color: var(--color-white);
   font-weight: var(--font-weight-bold);
 }
 
+/* Dark scrim mutes the UNSELECTED controls. Darkening the fill only raises the
+   white-text contrast, so AA is never at risk; the selected control drops the
+   scrim to read as the vivid, active choice. */
+.oc-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  border-radius: inherit;
+  background: var(--color-text-heading);
+  opacity: var(--state-hover);
+  transition: opacity var(--duration-fast) var(--easing-out);
+}
+
+.oc-btn--selected::before {
+  opacity: 0;
+}
+
+/* White state layer: press/focus/hover feedback on the colored fill. */
 .oc-btn::after {
   content: '';
   position: absolute;
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: var(--oc-accent);
+  background: var(--color-white);
   opacity: 0;
   transition: opacity var(--duration-fast) var(--easing-out);
 }
 
 .oc-btn:active::after {
   opacity: var(--state-pressed);
-}
-
-.oc-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--shadow-focus);
 }
 
 .oc-btn:focus-visible::after {
@@ -288,14 +292,24 @@ const selectedTokenId = computed(() =>
   }
 }
 
-/* Selected: tone-strong border + a persistent state-layer tint, paired with the
-   ✓ icon and an sr-only "Selected" — never color alone (AC4.2). */
-.oc-btn--selected {
-  border-color: var(--oc-accent);
+.oc-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
-.oc-btn--selected::after {
-  opacity: var(--state-pressed);
+/* Selected: vivid full-strength fill + inset white ring + extra lift, paired
+   with the ✓ icon and an sr-only "Selected" — distinguished by shape and
+   elevation, never color alone (AC4.2). */
+.oc-btn--selected {
+  box-shadow:
+    var(--shadow-md),
+    inset 0 0 0 2px var(--color-white);
+}
+
+.oc-btn--selected:focus-visible {
+  box-shadow:
+    var(--shadow-focus),
+    inset 0 0 0 2px var(--color-white);
 }
 
 .md__bet-error {
